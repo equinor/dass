@@ -18,11 +18,11 @@
 #
 # **Note about notation**
 #
-# The implementation of ES is based on section 9.5 of evensen2009, while the implementation of IES is based on evensen2019.
+# The implementation of ES is based on section 9.5 of [1] (see README for references), while the implementation of IES is based on [2].
 # The notation used in the two papers differ slightly, so we have made a few tweaks to make them more similar.
 #
-# - $A$ is used for the prior ensemble. (It's $X$ in evensen2019)
-# - $E$ is not divided by $\sqrt{N-1}$ as is done in evensen2019, which means that we do not multiply $E$ by $\sqrt{N-1}$ in the definition of $E$.
+# - $A$ is used for the prior ensemble. (It's $X$ in [2])
+# - $E$ is not divided by $\sqrt{N-1}$ as is done in [2], which means that we do not multiply $E$ by $\sqrt{N-1}$ in the definition of $E$.
 # - We do not use $EE^T / (N-1)$ to estimate the parameter covariance matrix, because we assume a diagonal observation error covariance matrix $C_{dd}$.
 # We instead scale matrices used in the analysis step such that $C_{dd}$ becomes the identity matrix.
 # This is what is known as exact inversion.
@@ -55,6 +55,7 @@ from dass import pde, utils, analysis, taper
 # Number of grid-cells in x and y direction
 nx = 50
 
+# time steps
 k_start = 0
 k_end = 1000
 
@@ -67,7 +68,7 @@ alpha_t = np.ones((nx, nx)) * 8.25
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
 # Choose `alpha` used here based on the maximum `alpha` that will be used in prior.
-dt = dx**2 / (4 * 10.0)
+dt = dx**2 / (4 * np.max(alpha_t))
 
 # True initial temperature field.
 u_top = 100.0
@@ -193,6 +194,7 @@ for e in range(N):
 # ## Run forward model (heat equation) `N` times
 
 # %%
+dt = dx**2 / (4 * np.max(A))
 fwd_runs = p_map(
     pde.heat_equation,
     [u] * N,
@@ -227,7 +229,7 @@ interact(
 )
 
 # %% [markdown]
-# ## Ensemble representation for measurements (Section 9.4 of evensen2009)
+# ## Ensemble representation for measurements (Section 9.4 of [1])
 #
 # Note that Evensen calls measurements what ERT calls observations.
 
@@ -318,3 +320,5 @@ W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
 A_IES = A @ X_IES
 assert np.isclose(A_IES, A_ES).all()
+
+# %%
