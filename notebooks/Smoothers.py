@@ -153,7 +153,7 @@ fig, ax = plt.subplots()
 p = ax.pcolormesh(u[-1], cmap=plt.cm.viridis, vmin=0, vmax=100)
 ax.set_title("True temperature field with sensor placement")
 utils.colorbar(p)
-ax.plot(x, y, "s", color="white", markersize=15)
+ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=15)
 
 # %% [markdown]
 # # Ensemble Smoother (ES) and Iterative Ensemble Smoother (IES)

@@ -3,8 +3,6 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 
-from tqdm import tqdm
-
 
 def heat_equation(
     u: npt.NDArray[np.float_],
@@ -27,7 +25,7 @@ def heat_equation(
 
     gamma = (alpha * dt) / (dx**2)
     plate_length = u.shape[1]
-    for k in tqdm(range(k_start, k_end - 1, 1)):
+    for k in range(k_start, k_end - 1, 1):
         for i in range(1, plate_length - 1, dx):
             for j in range(1, plate_length - 1, dx):
                 if scale is not None:
