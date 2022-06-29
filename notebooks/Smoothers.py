@@ -29,8 +29,6 @@
 # - $Y$ is used to hold measured responses, which are predictions made by the dynamical model at points in time and space for which we have observations.
 
 # %%
-# %load_ext autoreload
-
 import numpy as np
 
 np.set_printoptions(suppress=True)
@@ -45,6 +43,10 @@ import ipywidgets as widgets
 
 from p_tqdm import p_map
 
+from scipy.ndimage import gaussian_filter
+
+# %%
+# %load_ext autoreload
 # %autoreload 2
 from dass import pde, utils, analysis, taper
 
@@ -62,8 +64,9 @@ k_end = 1000
 dx = 1
 
 # Set the coefficient of heat transfer for each grid cell.
-alpha_t = np.ones((nx, nx)) * 8.25
+# alpha_t = np.ones((nx, nx)) * 8.25
 # alpha_t[:, nx // 2 :] = 10.0
+alpha_t = np.exp(5 * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0))
 
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
@@ -88,7 +91,6 @@ scale = 0.1
 
 u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 
-
 # %% [markdown]
 # # How-to create animation (Press `y` to convert from markdown to code)
 #
@@ -106,6 +108,17 @@ u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 #     fig, animate, interval=1, frames=k_end, repeat=False
 # )
 # anim.save("heat_equation_solution.gif", writer="imagemagick")
+
+# %% [markdown]
+# ## Plot every cells' heat transfer coefficient, i.e., the parameter field
+
+# %%
+fig, ax = plt.subplots()
+fig.suptitle("True parameter field")
+p = ax.pcolormesh(alpha_t)
+utils.colorbar(p)
+fig.tight_layout()
+
 
 # %% [markdown]
 # ## Interactive plot of true temperature field
@@ -130,12 +143,12 @@ interact(
 
 # %%
 # placement of sensors, i.e, where the observations are done
-# padding = int(0.15 * nx)
-# x = np.linspace(padding, nx - padding, 3, dtype=int)
-# y = np.linspace(padding, nx - padding, 3, dtype=int)
-# obs_coordinates = [utils.Coordinate(xc, yc) for xc in x for yc in y]
+padding = int(0.15 * nx)
+x = np.linspace(padding, nx - padding, 10, dtype=int)
+y = np.linspace(padding, nx - padding, 10, dtype=int)
+obs_coordinates = [utils.Coordinate(xc, yc) for xc in x for yc in y]
 
-obs_coordinates = [utils.Coordinate(nx // 2, nx // 2 + nx // 4)]
+#obs_coordinates = [utils.Coordinate(nx // 2, nx // 2 + nx // 4)]
 
 # At which times observations are taken
 obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
@@ -153,7 +166,7 @@ fig, ax = plt.subplots()
 p = ax.pcolormesh(u[-1], cmap=plt.cm.viridis, vmin=0, vmax=100)
 ax.set_title("True temperature field with sensor placement")
 utils.colorbar(p)
-ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=15)
+ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
 
 # %% [markdown]
 # # Ensemble Smoother (ES) and Iterative Ensemble Smoother (IES)
@@ -181,7 +194,8 @@ streams = [np.random.default_rng(s) for s in child_seeds]
 # `p_map` runs stuff in parallel.
 alphas = []
 for i in range(N):
-    alpha = np.ones(shape=(nx, nx)) * rng.uniform(low=0.1, high=10.0)
+    #alpha = np.ones(shape=(nx, nx)) * rng.uniform(low=0.1, high=10.0)
+    alpha = np.exp(5 * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0))
     alphas.append(alpha)
 
 # Evensens' formulation of the Ensemble Smoother has the prior as
@@ -189,6 +203,24 @@ for i in range(N):
 A = np.zeros(shape=(nx * nx, N))
 for e in range(N):
     A[:, e] = alphas[e].ravel()
+
+
+# %% [markdown]
+# ## Interactive plot of prior parameter fields
+
+# %%
+def interactive_prior_fields(n):
+    fig, ax = plt.subplots()
+    fig.suptitle(f"Prior field {n}")
+    p = ax.pcolormesh(alphas[n])
+    utils.colorbar(p)
+    fig.tight_layout()
+
+
+interact(
+    interactive_prior_fields,
+    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
+)
 
 # %% [markdown]
 # ## Run forward model (heat equation) `N` times
@@ -280,10 +312,25 @@ A_ES = A @ X
 # ## Compare prior and posterior of ES
 
 # %%
-A.mean(axis=1).mean()
+fig, ax = plt.subplots()
+fig.suptitle(f"Prior mean parameter field")
+p = ax.pcolormesh(A.mean(axis=1).reshape(nx, nx))
+utils.colorbar(p)
+fig.tight_layout()
 
 # %%
-A_ES.mean(axis=1).mean()
+fig, ax = plt.subplots()
+fig.suptitle(f"Posterior mean parameter field")
+p = ax.pcolormesh(A_ES.mean(axis=1).reshape(nx, nx))
+utils.colorbar(p)
+fig.tight_layout()
+
+# %%
+fig, ax = plt.subplots()
+fig.suptitle(f"True parameter field")
+p = ax.pcolormesh(alpha_t)
+utils.colorbar(p)
+fig.tight_layout()
 
 # %%
 # fig, axes = plt.subplots(nrows=1, ncols=2)
