@@ -65,7 +65,8 @@ dx = 1
 
 # Set the coefficient of heat transfer for each grid cell.
 # alpha_t = np.ones((nx, nx)) * 8.25
-# alpha_t[:, nx // 2 :] = 10.0
+# Using trick from page 15 of An Introduction to the Numerics of Flow in Porous Media using Matlab.
+# It's a nice way to generate realistic-looking parameter fields.
 alpha_t = np.exp(5 * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0))
 
 # Calculate maximum `dt`.
@@ -122,6 +123,8 @@ fig.tight_layout()
 
 # %% [markdown]
 # ## Interactive plot of true temperature field
+#
+# Shows how temperature changes with time.
 
 # %%
 def interactive_truth(k):
@@ -143,12 +146,12 @@ interact(
 
 # %%
 # placement of sensors, i.e, where the observations are done
-padding = int(0.15 * nx)
-x = np.linspace(padding, nx - padding, 10, dtype=int)
-y = np.linspace(padding, nx - padding, 10, dtype=int)
-obs_coordinates = [utils.Coordinate(xc, yc) for xc in x for yc in y]
-
-#obs_coordinates = [utils.Coordinate(nx // 2, nx // 2 + nx // 4)]
+pad = 1
+coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
+ncoords = coords.shape[0]
+nmeas = 100
+coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
+obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
 obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
@@ -207,6 +210,8 @@ for e in range(N):
 
 # %% [markdown]
 # ## Interactive plot of prior parameter fields
+#
+# We will search for solutions in the space spanned by the prior parameter fields
 
 # %%
 def interactive_prior_fields(n):
@@ -308,6 +313,11 @@ assert Y.shape == (
 X = analysis.ES(Y, D, Cdd)
 A_ES = A @ X
 
+# %%
+# The update may give non-physical parameter values, which here means negative heat conductivity.
+# Setting negative values to a small positive value but not zero because we want to be able to divide by them.
+A_ES = A_ES.clip(min=1e-8)
+
 # %% [markdown]
 # ## Compare prior and posterior of ES
 
@@ -331,6 +341,65 @@ fig.suptitle(f"True parameter field")
 p = ax.pcolormesh(alpha_t)
 utils.colorbar(p)
 fig.tight_layout()
+
+# %% [markdown]
+# ## Run forward model again but now with posterior conductivity fields
+
+# %%
+alphas_posterior = [A_ES[:, i].reshape(nx, nx) for i in range(N)]
+
+
+# %% [markdown]
+# ## Interactive plot of posterior parameter fields
+
+# %%
+def interactive_posterior_fields(n):
+    fig, ax = plt.subplots()
+    fig.suptitle(f"Posterior parameter field {n}")
+    p = ax.pcolormesh(alphas_posterior[n])
+    utils.colorbar(p)
+    fig.tight_layout()
+
+
+interact(
+    interactive_posterior_fields,
+    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
+)
+
+# %%
+dt = dx**2 / (4 * np.max(A_ES))
+fwd_runs_posterior = p_map(
+    pde.heat_equation,
+    [u] * N,
+    alphas_posterior,
+    [dx] * N,
+    [dt] * N,
+    [k_start] * N,
+    [k_end] * N,
+    streams,
+    [scale] * N,
+    desc=f"Running forward model.",
+)
+
+
+# %% [markdown]
+# ## Interactive plot of posterior temperature fields
+
+# %%
+def interactive_posterior_temp_fields(k, n):
+    fig, ax = plt.subplots()
+    fig.suptitle(f"Temperature field for realisation {n}")
+    p = ax.pcolormesh(fwd_runs_posterior[n][k], vmin=0, vmax=100)
+    ax.set_title(f"k = {k}")
+    utils.colorbar(p)
+    fig.tight_layout()
+
+
+interact(
+    interactive_posterior_temp_fields,
+    k=widgets.IntSlider(min=k_start, max=k_end - 1, step=1, value=0),
+    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
+)
 
 # %%
 # fig, axes = plt.subplots(nrows=1, ncols=2)
@@ -366,6 +435,7 @@ Xs = [A]
 W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
 A_IES = A @ X_IES
+A_IES = A_IES.clip(min=1e-8)
 assert np.isclose(A_IES, A_ES).all()
 
 # %%
