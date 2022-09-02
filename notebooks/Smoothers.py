@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.13.8
+#       jupytext_version: 1.14.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -51,7 +51,9 @@ from scipy.ndimage import gaussian_filter
 from dass import pde, utils, analysis, taper
 
 # %% [markdown]
-# ## Define parameters, set true initial conditions and calculate the true temperature field
+# ## Define true parameters, set true initial conditions and calculate the true temperature field
+#
+# Perhaps obvious, but we do not have this information in real-life.
 
 # %%
 # Number of grid-cells in x and y direction
@@ -64,14 +66,16 @@ k_end = 1000
 dx = 1
 
 # Set the coefficient of heat transfer for each grid cell.
-# alpha_t = np.ones((nx, nx)) * 8.25
-# Using trick from page 15 of An Introduction to the Numerics of Flow in Porous Media using Matlab.
+# Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
 # It's a nice way to generate realistic-looking parameter fields.
-alpha_t = np.exp(5 * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0))
+# In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
+alpha_t = np.exp(
+    5
+    * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
+)
 
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
-# Choose `alpha` used here based on the maximum `alpha` that will be used in prior.
 dt = dx**2 / (4 * np.max(alpha_t))
 
 # True initial temperature field.
@@ -115,7 +119,7 @@ u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 
 # %%
 fig, ax = plt.subplots()
-fig.suptitle("True parameter field")
+ax.set_title("True parameter field")
 p = ax.pcolormesh(alpha_t)
 utils.colorbar(p)
 fig.tight_layout()
@@ -197,12 +201,16 @@ streams = [np.random.default_rng(s) for s in child_seeds]
 # `p_map` runs stuff in parallel.
 alphas = []
 for i in range(N):
-    #alpha = np.ones(shape=(nx, nx)) * rng.uniform(low=0.1, high=10.0)
-    alpha = np.exp(5 * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0))
+    alpha = np.exp(
+        5
+        * gaussian_filter(
+            gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
+        )
+    )
     alphas.append(alpha)
 
 # Evensens' formulation of the Ensemble Smoother has the prior as
-# an (nx * nx, N) matrix, i.ie (number of parameters, N).
+# a (nx * nx, N) matrix, i.e (number of parameters, N).
 A = np.zeros(shape=(nx * nx, N))
 for e in range(N):
     A[:, e] = alphas[e].ravel()
@@ -211,12 +219,12 @@ for e in range(N):
 # %% [markdown]
 # ## Interactive plot of prior parameter fields
 #
-# We will search for solutions in the space spanned by the prior parameter fields
+# We will search for solutions in the space spanned by the prior parameter fields.
 
 # %%
 def interactive_prior_fields(n):
     fig, ax = plt.subplots()
-    fig.suptitle(f"Prior field {n}")
+    ax.set_title(f"Prior field {n}")
     p = ax.pcolormesh(alphas[n])
     utils.colorbar(p)
     fig.tight_layout()
@@ -272,7 +280,6 @@ interact(
 
 # %%
 # Assume diagonal ensemble covariance matrix for the measurement perturbations.
-# NB! Big assumption.
 Cdd = np.diag(d.sd.values**2)
 
 # 9.4 Ensemble representation for measurements
@@ -323,21 +330,21 @@ A_ES = A_ES.clip(min=1e-8)
 
 # %%
 fig, ax = plt.subplots()
-fig.suptitle(f"Prior mean parameter field")
+ax.set_title(f"Prior mean parameter field")
 p = ax.pcolormesh(A.mean(axis=1).reshape(nx, nx))
 utils.colorbar(p)
 fig.tight_layout()
 
 # %%
 fig, ax = plt.subplots()
-fig.suptitle(f"Posterior mean parameter field")
+ax.set_title(f"Posterior mean parameter field")
 p = ax.pcolormesh(A_ES.mean(axis=1).reshape(nx, nx))
 utils.colorbar(p)
 fig.tight_layout()
 
 # %%
 fig, ax = plt.subplots()
-fig.suptitle(f"True parameter field")
+ax.set_title(f"True parameter field")
 p = ax.pcolormesh(alpha_t)
 utils.colorbar(p)
 fig.tight_layout()
@@ -400,18 +407,6 @@ interact(
     k=widgets.IntSlider(min=k_start, max=k_end - 1, step=1, value=0),
     n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
 )
-
-# %%
-# fig, axes = plt.subplots(nrows=1, ncols=2)
-# axes[0].hist(A[0])
-# axes[1].hist(A[1])
-# fig.suptitle("Prior")
-
-# %%
-# fig, axes = plt.subplots(nrows=1, ncols=2)
-# axes[0].hist(A_ES[0])
-# axes[1].hist(A_ES[1])
-# fig.suptitle("Posterior")
 
 # %% [markdown]
 # # IES

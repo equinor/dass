@@ -18,6 +18,7 @@ def observations(
     times: npt.NDArray[np.int_],
     field: npt.NDArray[np.float_],
 ) -> pd.DataFrame:
+    """Generate synthetic observations by adding noise to true field-values."""
     d = pd.DataFrame(
         {
             "k": pd.Series(dtype=int),
