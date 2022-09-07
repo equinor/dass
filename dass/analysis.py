@@ -34,7 +34,7 @@ def ES(
     Dprime = taper_coeff * (D - Y)  # Eq. 9.24
     S = Y - Y.mean(axis=1, keepdims=True)  # Eq. 9.25
 
-    # Modified Eq. 9.25
+    # Modified Eq. 9.26
     C = S @ S.T + (N - 1) * (1 / taper_coeff**2) * Cdd
 
     # Eq. 9.27

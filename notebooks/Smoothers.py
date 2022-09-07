@@ -36,14 +36,16 @@ rng = np.random.default_rng()
 
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.figsize"] = (8, 8)
-plt.rcParams.update({"font.size": 12})
+plt.rcParams["figure.figsize"] = (6, 6)
+plt.rcParams.update({"font.size": 10})
 from ipywidgets import interact
 import ipywidgets as widgets
 
 from p_tqdm import p_map
 
 from scipy.ndimage import gaussian_filter
+
+import iterative_ensemble_smoother as ies
 
 # %%
 # %load_ext autoreload
@@ -57,11 +59,11 @@ from dass import pde, utils, analysis, taper
 
 # %%
 # Number of grid-cells in x and y direction
-nx = 50
+nx = 10
 
 # time steps
 k_start = 0
-k_end = 1000
+k_end = 100
 
 dx = 1
 
@@ -79,20 +81,25 @@ alpha_t = np.exp(
 dt = dx**2 / (4 * np.max(alpha_t))
 
 # True initial temperature field.
-u_top = 100.0
+u_top = 0.0
 u_left = 0.0
 u_bottom = 0.0
 u_right = 0.0
 u = np.empty((k_end, nx, nx))
 u.fill(0.0)
 # Set the boundary conditions
+u[:, :, :] = np.exp(
+    8
+    * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
+)
 u[:, (nx - 1) :, :] = u_top
 u[:, :, :1] = u_left
 u[:, :1, 1:] = u_bottom
 u[:, :, (nx - 1) :] = u_right
 
 # How much noise to add to heat equation.
-scale = 0.1
+# scale = 0.1
+scale = None
 
 u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 
@@ -128,7 +135,7 @@ fig.tight_layout()
 # %% [markdown]
 # ## Interactive plot of true temperature field
 #
-# Shows how temperature changes with time.
+# Shows how the temperature of the true field changes with time.
 
 # %%
 def interactive_truth(k):
@@ -153,12 +160,12 @@ interact(
 pad = 1
 coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
 ncoords = coords.shape[0]
-nmeas = 100
+nmeas = 64
 coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
 obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
-obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
+obs_times = np.linspace(5, k_end, 20, endpoint=False, dtype=int)
 
 d = utils.observations(obs_coordinates, obs_times, u)
 # number of measurements
@@ -170,7 +177,7 @@ obs_coordinates = set(zip(d.index.get_level_values("x"), d.index.get_level_value
 x, y = zip(*obs_coordinates)
 
 fig, ax = plt.subplots()
-p = ax.pcolormesh(u[-1], cmap=plt.cm.viridis, vmin=0, vmax=100)
+p = ax.pcolormesh(u[0], cmap=plt.cm.viridis, vmin=0, vmax=100)
 ax.set_title("True temperature field with sensor placement")
 utils.colorbar(p)
 ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
@@ -180,7 +187,7 @@ ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersi
 
 # %%
 # Number of realisations
-N = 100
+N = 500
 
 # %% [markdown]
 # ## Define random seeds because multiprocessing
@@ -313,12 +320,20 @@ assert Y.shape == (
     N,
 ), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
 
+# %%
+enough_ens_var_idx = Y.var(axis=1) > 1e-6
+print(f"{list(enough_ens_var_idx).count(False)} measurements will be deactivated.")
+Y = Y[enough_ens_var_idx, :]
+D = D[enough_ens_var_idx, :]
+Cdd = Cdd[enough_ens_var_idx, :]
+Cdd = Cdd[:, enough_ens_var_idx]
+
 # %% [markdown]
 # ## Perform ES update
 
 # %%
 X = analysis.ES(Y, D, Cdd)
-A_ES = A @ X
+A_ES = (A - A.mean(axis=1, keepdims=True)) @ X
 
 # %%
 # The update may give non-physical parameter values, which here means negative heat conductivity.
@@ -326,87 +341,59 @@ A_ES = A @ X
 A_ES = A_ES.clip(min=1e-8)
 
 # %% [markdown]
-# ## Compare prior and posterior of ES
+# ## Testing the new iterative_ensemble_smoother package
 
 # %%
-fig, ax = plt.subplots()
-ax.set_title(f"Prior mean parameter field")
-p = ax.pcolormesh(A.mean(axis=1).reshape(nx, nx))
-utils.colorbar(p)
-fig.tight_layout()
-
-# %%
-fig, ax = plt.subplots()
-ax.set_title(f"Posterior mean parameter field")
-p = ax.pcolormesh(A_ES.mean(axis=1).reshape(nx, nx))
-utils.colorbar(p)
-fig.tight_layout()
-
-# %%
-fig, ax = plt.subplots()
-ax.set_title(f"True parameter field")
-p = ax.pcolormesh(alpha_t)
-utils.colorbar(p)
-fig.tight_layout()
-
-# %% [markdown]
-# ## Run forward model again but now with posterior conductivity fields
-
-# %%
-alphas_posterior = [A_ES[:, i].reshape(nx, nx) for i in range(N)]
-
-
-# %% [markdown]
-# ## Interactive plot of posterior parameter fields
-
-# %%
-def interactive_posterior_fields(n):
-    fig, ax = plt.subplots()
-    fig.suptitle(f"Posterior parameter field {n}")
-    p = ax.pcolormesh(alphas_posterior[n])
-    utils.colorbar(p)
-    fig.tight_layout()
-
-
-interact(
-    interactive_posterior_fields,
-    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
+A_ES_ert = ies.ensemble_smoother_update_step(
+    Y, A - A.mean(axis=1, keepdims=True), d.sd.values, d.value.values
 )
 
-# %%
-dt = dx**2 / (4 * np.max(A_ES))
-fwd_runs_posterior = p_map(
-    pde.heat_equation,
-    [u] * N,
-    alphas_posterior,
-    [dx] * N,
-    [dt] * N,
-    [k_start] * N,
-    [k_end] * N,
-    streams,
-    [scale] * N,
-    desc=f"Running forward model.",
-)
-
-
 # %% [markdown]
-# ## Interactive plot of posterior temperature fields
+# ## Comparing prior and posterior
+#
+# The posterior calculated by ES is on average expected to be closer to the truth than the prior.
+# By "closer", we mean in terms of Root Mean Squared Error (RMSE).
+# The reason for this is that ES is based on the Kalman Filter, which is the "Best Linear Unbiased Estimator" (BLUE) and BLUE estimators have this property.
+# However, this holds for certain only when the number of realizations tends to infinity.
+# In practice this mean that we might end up with an increased RMSE when using a finite number of realizations.
 
 # %%
-def interactive_posterior_temp_fields(k, n):
-    fig, ax = plt.subplots()
-    fig.suptitle(f"Temperature field for realisation {n}")
-    p = ax.pcolormesh(fwd_runs_posterior[n][k], vmin=0, vmax=100)
-    ax.set_title(f"k = {k}")
-    utils.colorbar(p)
-    fig.tight_layout()
+err_posterior = alpha_t.ravel() - A_ES.mean(axis=1)
+np.sqrt(np.mean(err_posterior * err_posterior))
 
+# %%
+err_posterior_ert = alpha_t.ravel() - A_ES_ert.mean(axis=1)
+np.sqrt(np.mean(err_posterior_ert * err_posterior_ert))
 
-interact(
-    interactive_posterior_temp_fields,
-    k=widgets.IntSlider(min=k_start, max=k_end - 1, step=1, value=0),
-    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
-)
+# %%
+err_prior = alpha_t.ravel() - A.mean(axis=1)
+np.sqrt(np.mean(err_prior * err_prior))
+
+# %%
+fig, ax = plt.subplots(nrows=1, ncols=4)
+fig.set_size_inches(10, 10)
+
+ax[0].set_title(f"Posterior dass")
+ax[1].set_title(f"Posterior ert")
+ax[2].set_title(f"Truth")
+ax[3].set_title(f"Prior")
+
+p0 = ax[0].pcolormesh(A_ES.mean(axis=1).reshape(nx, nx))
+p1 = ax[1].pcolormesh(A_ES_ert.mean(axis=1).reshape(nx, nx))
+p2 = ax[2].pcolormesh(alpha_t)
+p3 = ax[3].pcolormesh(A.mean(axis=1).reshape(nx, nx))
+
+utils.colorbar(p0)
+utils.colorbar(p1)
+utils.colorbar(p2)
+utils.colorbar(p3)
+
+ax[0].set_aspect("equal", "box")
+ax[1].set_aspect("equal", "box")
+ax[2].set_aspect("equal", "box")
+ax[3].set_aspect("equal", "box")
+
+fig.tight_layout()
 
 # %% [markdown]
 # # IES
@@ -415,13 +402,8 @@ interact(
 # Step length in Gauss Newton
 gamma = 1.0
 
-# Line 2 of `Algorithm 1`.
-
 # Coefficient matrix as defined in Eq. 16 and Eq. 17.
 W = np.zeros(shape=(N, N))
-
-# Equivalent to X1 = X.
-Xs = [A]
 
 # %% [markdown]
 # ## Check that single iteration of IES with step length 1.0 is the same as ES.
@@ -429,8 +411,6 @@ Xs = [A]
 # %%
 W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
-A_IES = A @ X_IES
-A_IES = A_IES.clip(min=1e-8)
-assert np.isclose(A_IES, A_ES).all()
+assert np.isclose(X, X_IES, atol=1e-5).all()
 
 # %%
