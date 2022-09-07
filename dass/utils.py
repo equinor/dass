@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import List
+from typing import Callable, List
 
 import numpy as np
 import numpy.typing as npt
@@ -17,8 +17,16 @@ def observations(
     coordinates: List[Coordinate],
     times: npt.NDArray[np.int_],
     field: npt.NDArray[np.float_],
+    error: Callable,
 ) -> pd.DataFrame:
-    """Generate synthetic observations by adding noise to true field-values."""
+    """Generate synthetic observations by adding noise to true field-values.
+
+    Parameters
+    ----------
+    error: Callable
+        Function that takes a single argument (the true field value) and returns
+        a value to be used as the standard deviation of the noise.
+    """
     d = pd.DataFrame(
         {
             "k": pd.Series(dtype=int),
@@ -36,7 +44,7 @@ def observations(
             # is due to a convention followed by matplotlib's `pcolormesh`
             # See documentation for details.
             value = field[k, coordinate.y, coordinate.x]
-            sd = max(0.10 * value, 1)
+            sd = error(value)
             _df = pd.DataFrame(
                 {
                     "k": [k],
