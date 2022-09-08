@@ -29,7 +29,7 @@ jupyter notebook
 
 ## On notation
 
-The implementation of ES is based on section 9.5 of [1] (see README for references), while the implementation of IES is based on [2].
+The implementation of ES is based on section 9.5 of [1], while the implementation of IES is based on [2].
 The notation used in the two papers differ slightly, so we have made a few tweaks to make them more similar.
 
 - $A$ is used for the prior ensemble. (It's $X$ in [2])
