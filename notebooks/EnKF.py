@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.13.8
+#       jupytext_version: 1.14.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -134,7 +134,7 @@ obs_coordinates = [utils.Coordinate(nx // 2, nx - 2)]
 # At which times observations are taken
 obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
 
-d = utils.observations(obs_coordinates, obs_times, u)
+d = utils.observations(obs_coordinates, obs_times, u, lambda value: abs(0.01 * value))
 # number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)

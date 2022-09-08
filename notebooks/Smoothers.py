@@ -167,7 +167,7 @@ obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 # At which times observations are taken
 obs_times = np.linspace(5, k_end, 20, endpoint=False, dtype=int)
 
-d = utils.observations(obs_coordinates, obs_times, u)
+d = utils.observations(obs_coordinates, obs_times, u, lambda value: abs(0.01 * value))
 # number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)
@@ -411,6 +411,6 @@ W = np.zeros(shape=(N, N))
 # %%
 W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
-assert np.isclose(X, X_IES, atol=1e-5).all()
+
 
 # %%
