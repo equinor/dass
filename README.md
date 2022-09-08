@@ -3,12 +3,11 @@
 Implementations of Ensemble Smoother as given in [1] and Iterative Ensemble Smoother (IES) as given in [2],
 see [dass/analysis.py](dass/analysis.py).
 
-The only forward model currently available is a 2D stochastic heat equation, see [dass/pde.py](dass/pde.py).
+Examples / Tutorials:
 
-For complete examples see
-
-- [notebooks/Smoothers.ipynb](notebooks/Smoothers.ipynb) for pure parameter estimation using smoothers.
-- [notebooks/EnKF.ipynb](notebooks/EnKF.ipynb) for sequential data assimilation or filtering.
+- [notebooks/ES_2D_Heat_Equation.ipynb](notebooks/ES_2D_Heat_Equation.ipynb) for parameter estimation using ES and the Heat Equation.
+- [notebooks/EnKF_2D_Heat_Equation.ipynb](notebooks/EnKF_2D_Heat_Equation.ipynb) for sequential data assimilation or filtering using EnKF and the Heat Equation.
+- [notebooks/IES_Burgers.ipynb](notebooks/IES_Burgers.ipynb) for parameter estimation using IES and Burgers' equation.
 
 ## Installation
 
