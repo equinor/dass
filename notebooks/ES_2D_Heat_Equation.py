@@ -75,11 +75,13 @@ u_bottom = 0.0
 u_right = 0.0
 u = np.empty((k_end, nx, nx))
 u.fill(0.0)
-# Set the boundary conditions
+
 u[:, :, :] = np.exp(
     8
     * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
 )
+
+# Set the boundary conditions
 u[:, (nx - 1) :, :] = u_top
 u[:, :, :1] = u_left
 u[:, :1, 1:] = u_bottom
