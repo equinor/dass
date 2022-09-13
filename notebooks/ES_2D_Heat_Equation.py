@@ -223,6 +223,7 @@ for e in range(N):
 # ## Interactive plot of prior parameter fields
 #
 # We will search for solutions in the space spanned by the prior parameter fields.
+# This space is sometimes called the Ensemble Subspace.
 
 # %%
 def interactive_prior_fields(n):
