@@ -15,6 +15,12 @@
 
 # %% [markdown]
 # # Parameter estimation using ES and the 2D Heat Equation
+#
+# **Note about coordinate system**
+#
+# Matplotlib's `pcolormesh` follows the standard matrix convention: "An array C with shape (nrows, ncolumns) is plotted with the column number as X and the row number as Y."
+#
+# This means that to get values at the point `(k, x, y)` of a field `u`, we must do `u[k, y, x]`.
 
 # %%
 import numpy as np
