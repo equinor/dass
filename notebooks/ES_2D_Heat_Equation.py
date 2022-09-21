@@ -15,15 +15,10 @@
 
 # %% [markdown]
 # # Parameter estimation using ES and the 2D Heat Equation
-#
-# **Note about coordinate system**
-#
-# Matplotlib's `pcolormesh` follows the standard matrix convention: "An array C with shape (nrows, ncolumns) is plotted with the column number as X and the row number as Y."
-#
-# This means that to get values at the point `(k, x, y)` of a field `u`, we must do `u[k, y, x]`.
 
 # %%
 import numpy as np
+import pandas as pd
 
 np.set_printoptions(suppress=True)
 rng = np.random.default_rng()
@@ -32,6 +27,8 @@ import matplotlib.pyplot as plt
 
 plt.rcParams["figure.figsize"] = (6, 6)
 plt.rcParams.update({"font.size": 10})
+# Ignore error when drawing many figures
+plt.rcParams.update({"figure.max_open_warning": 0})
 from ipywidgets import interact
 import ipywidgets as widgets
 
@@ -47,11 +44,11 @@ import iterative_ensemble_smoother as ies
 from dass import pde, utils, analysis, taper
 
 # %% [markdown]
-# ## Define true parameters, set true initial conditions and calculate the true temperature field
-#
-# Perhaps obvious, but we do not have this information in real-life.
+# ## Define ensemble size and parameters related to the simulator
 
 # %%
+N = 100
+
 # Number of grid-cells in x and y direction
 nx = 10
 
@@ -59,6 +56,38 @@ nx = 10
 k_start = 0
 k_end = 100
 
+# %% [markdown]
+# ## Define prior
+#
+# The Ensemble Smoother searches for solutions in `Ensemble Subspace`, which means that it tries to find a linear combination of the priors that best fit the observed data.
+# A good prior is therefore vital.
+
+# %%
+# List of matrices of size (nx, nx) containing priors.
+# The reason for having a list is that `p_map` requires it.
+# `p_map` runs stuff in parallel.
+alphas = []
+for i in range(N):
+    alpha = np.exp(
+        5
+        * gaussian_filter(
+            gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
+        )
+    )
+    alphas.append(alpha)
+
+# Evensens' formulation of the Ensemble Smoother has the prior as
+# a (nx * nx, N) matrix, i.e (number of parameters, N).
+A = np.zeros(shape=(nx * nx, N))
+for e in range(N):
+    A[:, e] = alphas[e].ravel()
+
+# %% [markdown]
+# ## Define true parameters, set true initial conditions and calculate the true temperature field
+#
+# Perhaps obvious, but we do not have this information in real-life.
+
+# %%
 dx = 1
 
 # Set the coefficient of heat transfer for each grid cell.
@@ -72,32 +101,21 @@ alpha_t = np.exp(
 
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
-dt = dx**2 / (4 * np.max(alpha_t))
+dt = dx**2 / (4 * max(np.max(A), np.max(alpha_t)))
 
 # True initial temperature field.
-u_top = 0.0
-u_left = 0.0
-u_bottom = 0.0
-u_right = 0.0
-u = np.empty((k_end, nx, nx))
-u.fill(0.0)
-
-u[:, :, :] = np.exp(
-    9
-    * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
-)
+u_top = 100.0
+u_init = np.empty((k_end, nx, nx))
+u_init.fill(0.0)
 
 # Set the boundary conditions
-u[:, (nx - 1) :, :] = u_top
-u[:, :, :1] = u_left
-u[:, :1, 1:] = u_bottom
-u[:, :, (nx - 1) :] = u_right
+u_init[:, 1 : (nx - 1), 0] = u_top
 
-# How much noise to add to heat equation.
-# scale = 1.0
+# How much noise to add to heat equation, also called model noise.
+# scale = 0.1
 scale = None
 
-u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
+u_t = pde.heat_equation(u_init, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 
 # %% [markdown]
 # # How-to create animation (Press `y` to convert from markdown to code)
@@ -123,7 +141,8 @@ u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 # %%
 fig, ax = plt.subplots()
 ax.set_title("True parameter field")
-p = ax.pcolormesh(alpha_t)
+ax.invert_yaxis()
+p = ax.pcolormesh(alpha_t.T)
 utils.colorbar(p)
 fig.tight_layout()
 
@@ -137,7 +156,8 @@ fig.tight_layout()
 def interactive_truth(k):
     fig, ax = plt.subplots()
     fig.suptitle("True temperature field")
-    p = ax.pcolormesh(u[k], cmap=plt.cm.jet)
+    p = ax.pcolormesh(u_t[k].T, cmap=plt.cm.jet)
+    ax.invert_yaxis()
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
     fig.tight_layout()
@@ -161,29 +181,30 @@ coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
 obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
-obs_times = np.linspace(5, k_end, 20, endpoint=False, dtype=int)
+obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
 
-d = utils.observations(obs_coordinates, obs_times, u, lambda value: abs(0.01))
+d = utils.observations(obs_coordinates, obs_times, u_t, lambda value: abs(0.05 * value))
 # number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)
 
+k_levels = d.index.get_level_values("k").to_list()
+x_levels = d.index.get_level_values("x").to_list()
+y_levels = d.index.get_level_values("y").to_list()
+
 # Plot temperature field and show placement of sensors.
-obs_coordinates = set(zip(d.index.get_level_values("x"), d.index.get_level_values("y")))
-x, y = zip(*obs_coordinates)
+obs_coordinates_from_index = set(zip(x_levels, y_levels))
+x, y = zip(*obs_coordinates_from_index)
 
 fig, ax = plt.subplots()
-p = ax.pcolormesh(u[0], cmap=plt.cm.jet)
+p = ax.pcolormesh(u_t[0].T, cmap=plt.cm.jet)
+ax.invert_yaxis()
 ax.set_title("True temperature field with sensor placement")
 utils.colorbar(p)
 ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
 
 # %% [markdown]
 # # Ensemble Smoother (ES)
-
-# %%
-# Number of realisations
-N = 100
 
 # %% [markdown]
 # ## Define random seeds because multiprocessing
@@ -194,29 +215,6 @@ N = 100
 ss = np.random.SeedSequence(12345)
 child_seeds = ss.spawn(N)
 streams = [np.random.default_rng(s) for s in child_seeds]
-
-# %% [markdown]
-# ## Define parameters to run different realisations with, aka the prior
-
-# %%
-# List of matrices of size (nx, nx) containing priors.
-# The reason for having a list is that `p_map` requires it.
-# `p_map` runs stuff in parallel.
-alphas = []
-for i in range(N):
-    alpha = np.exp(
-        5
-        * gaussian_filter(
-            gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
-        )
-    )
-    alphas.append(alpha)
-
-# Evensens' formulation of the Ensemble Smoother has the prior as
-# a (nx * nx, N) matrix, i.e (number of parameters, N).
-A = np.zeros(shape=(nx * nx, N))
-for e in range(N):
-    A[:, e] = alphas[e].ravel()
 
 
 # %% [markdown]
@@ -229,7 +227,8 @@ for e in range(N):
 def interactive_prior_fields(n):
     fig, ax = plt.subplots()
     ax.set_title(f"Prior field {n}")
-    p = ax.pcolormesh(alphas[n])
+    ax.invert_yaxis()
+    p = ax.pcolormesh(alphas[n].T, vmin=5, vmax=25)
     utils.colorbar(p)
     fig.tight_layout()
 
@@ -243,10 +242,9 @@ interact(
 # ## Run forward model (heat equation) `N` times
 
 # %%
-dt = dx**2 / (4 * np.max(A))
 fwd_runs = p_map(
     pde.heat_equation,
-    [u] * N,
+    [u_init] * N,
     alphas,
     [dx] * N,
     [dt] * N,
@@ -266,8 +264,9 @@ fwd_runs = p_map(
 # %%
 def interactive_realisations(k, n):
     fig, ax = plt.subplots()
+    ax.invert_yaxis()
     fig.suptitle(f"Temperature field for realisation {n}")
-    p = ax.pcolormesh(fwd_runs[n][k], cmap=plt.cm.jet)
+    p = ax.pcolormesh(fwd_runs[n][k].T, cmap=plt.cm.jet)
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
     fig.tight_layout()
@@ -304,21 +303,65 @@ D = np.ones((m, N)) * d.value.values.reshape(-1, 1) + E
 # ## Measure model response at points in time and space where we have observations
 
 # %%
-Y = np.array(
-    [
-        fwd_run[
-            d.index.get_level_values("k").to_list(),
-            d.index.get_level_values("y").to_list(),
-            d.index.get_level_values("x").to_list(),
-        ]
-        for fwd_run in fwd_runs
-    ]
-).T
+Y_df = pd.DataFrame({"k": k_levels, "x": x_levels, "y": y_levels})
+
+for real, fwd_run in enumerate(fwd_runs):
+    Y_df = Y_df.assign(**{f"R{real}": fwd_run[k_levels, x_levels, y_levels]})
+
+Y_df = Y_df.set_index(["k", "x", "y"], verify_integrity=True)
+
+# %%
+Y = Y_df.values
 
 assert Y.shape == (
     m,
     N,
 ), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
+
+# %% [markdown]
+# ## Checkig coverage
+#
+# There's good coverage if there is overlap between observations and responses at sensor points.
+
+# %%
+for sensor_coordinates in obs_coordinates:
+    fig, ax = plt.subplots()
+    ax.set_title(
+        f"Sensor readings at coordinate {sensor_coordinates.x, sensor_coordinates.y}"
+    )
+    ax.set_ylabel("Temperature")
+    ax.set_xlabel("Time step $k$")
+    ax.grid()
+
+    df_single_sensor = d.query(f"x=={sensor_coordinates.x} & y=={sensor_coordinates.y}")
+
+    y_sensor = df_single_sensor["value"]
+    yerr_sensor = df_single_sensor["sd"]
+
+    k_sensor = np.unique(k_levels)
+    ax.errorbar(
+        k_sensor,
+        y_sensor,
+        yerr_sensor,
+        ecolor="red",
+        capsize=10,
+        elinewidth=1,
+        markeredgewidth=1,
+    )
+
+    ax.plot(
+        k_sensor,
+        Y_df.query(f"x=={sensor_coordinates.x} & y=={sensor_coordinates.y}"),
+        color="gray",
+        alpha=0.2,
+    )
+    ax.plot(
+        k_sensor,
+        u_t[np.unique(k_levels), sensor_coordinates.x, sensor_coordinates.y],
+        color="black",
+    )
+
+    fig.tight_layout()
 
 # %% [markdown]
 # ## Deactivate sensors that measure the same temperature in all realizations
@@ -343,8 +386,8 @@ Cdd = Cdd[:, enough_ens_var_idx]
 # %%
 ens_std = Y.std(axis=1)
 ens_mean = Y.mean(axis=1)
-obs_std = d.sd.values
-obs_value = d.value.values
+obs_std = d.sd.values[enough_ens_var_idx]
+obs_value = d.value.values[enough_ens_var_idx]
 innov = obs_value - ens_mean
 
 is_outlier = np.abs(innov) > 3.0 * (ens_std + obs_std)
@@ -373,8 +416,16 @@ A_ES = A_ES.clip(min=1e-8)
 # ## Testing the new iterative_ensemble_smoother package
 
 # %%
+# A_ES_ert = ies.ensemble_smoother_update_step(
+#    Y, A, d.sd.values[~is_outlier], d.value.values[~is_outlier], inversion=ies.InversionType.SUBSPACE_RE
+# )
+
 A_ES_ert = ies.ensemble_smoother_update_step(
-    Y, A, d.sd.values[~is_outlier], d.value.values[~is_outlier]
+    Y,
+    A,
+    obs_std[~is_outlier],
+    obs_value[~is_outlier],
+    inversion=ies.InversionType.EXACT,
 )
 
 # %% [markdown]
@@ -403,14 +454,20 @@ fig, ax = plt.subplots(nrows=1, ncols=4)
 fig.set_size_inches(10, 10)
 
 ax[0].set_title(f"Posterior dass")
+ax[0].invert_yaxis()
 ax[1].set_title(f"Posterior ert")
+ax[1].invert_yaxis()
 ax[2].set_title(f"Truth")
+ax[2].invert_yaxis()
 ax[3].set_title(f"Prior")
+ax[3].invert_yaxis()
 
-p0 = ax[0].pcolormesh(A_ES.mean(axis=1).reshape(nx, nx))
-p1 = ax[1].pcolormesh(A_ES_ert.mean(axis=1).reshape(nx, nx))
-p2 = ax[2].pcolormesh(alpha_t)
-p3 = ax[3].pcolormesh(A.mean(axis=1).reshape(nx, nx))
+vmin = 8
+vmax = 20
+p0 = ax[0].pcolormesh(A_ES.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+p1 = ax[1].pcolormesh(A_ES_ert.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+p2 = ax[2].pcolormesh(alpha_t.T, vmin=vmin, vmax=vmax)
+p3 = ax[3].pcolormesh(A.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
 
 utils.colorbar(p0)
 utils.colorbar(p1)

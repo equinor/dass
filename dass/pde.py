@@ -20,7 +20,8 @@ def heat_equation(
     Based on:
     https://levelup.gitconnected.com/solving-2d-heat-equation-numerically-using-python-3334004aa01a
     """
-    assert (dt <= dx**2 / (4 * alpha)).all(), "Choise of dt not numerically stable"
+    _u = u.copy()
+    # assert (dt <= dx**2 / (4 * alpha)).all(), "Choise of dt not numerically stable"
     nx = u.shape[1]  # number of grid cells
     assert alpha.shape == (nx, nx)
 
@@ -33,20 +34,20 @@ def heat_equation(
                     noise = rng.normal(scale=scale)
                 else:
                     noise = 0
-                u[k + 1, i, j] = (
+                _u[k + 1, i, j] = (
                     gamma[i, j]
                     * (
-                        u[k][i + 1][j]
-                        + u[k][i - 1][j]
-                        + u[k][i][j + 1]
-                        + u[k][i][j - 1]
-                        - 4 * u[k][i][j]
+                        _u[k][i + 1][j]
+                        + _u[k][i - 1][j]
+                        + _u[k][i][j + 1]
+                        + _u[k][i][j - 1]
+                        - 4 * _u[k][i][j]
                     )
-                    + u[k][i][j]
+                    + _u[k][i][j]
                     + noise
                 )
 
-    return u
+    return _u
 
 
 def burgers(nx: int, ny: int, nt: float, nu: float) -> npt.NDArray[np.float_]:

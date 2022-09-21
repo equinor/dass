@@ -43,7 +43,7 @@ def observations(
             # The reason for u[k, y, x] instead of the perhaps more natural u[k, x, y],
             # is due to a convention followed by matplotlib's `pcolormesh`
             # See documentation for details.
-            value = field[k, coordinate.y, coordinate.x]
+            value = field[k, coordinate.x, coordinate.y]
             sd = error(value)
             _df = pd.DataFrame(
                 {
