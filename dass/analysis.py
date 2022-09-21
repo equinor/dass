@@ -31,10 +31,11 @@ def ES(
         Array to multiply with prior to get posterior.
     """
     N = D.shape[1]
-    Dprime = taper_coeff * (D - Y)  # Eq. 9.24
+    # Eq. 9.24 with `taper_coeff` added
+    Dprime = taper_coeff * (D - Y)
     S = Y - Y.mean(axis=1, keepdims=True)  # Eq. 9.25
 
-    # Modified Eq. 9.26
+    # Eq. 9.26 with `taper_coeff` added
     C = S @ S.T + (N - 1) * (1 / taper_coeff**2) * Cdd
 
     # Eq. 9.27
