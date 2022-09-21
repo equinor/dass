@@ -26,7 +26,7 @@
 import numpy as np
 
 np.set_printoptions(suppress=True)
-rng = np.random.default_rng(12)
+rng = np.random.default_rng()
 
 import matplotlib.pyplot as plt
 
@@ -83,7 +83,7 @@ u = np.empty((k_end, nx, nx))
 u.fill(0.0)
 
 u[:, :, :] = np.exp(
-    8
+    9
     * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
 )
 
@@ -94,7 +94,7 @@ u[:, :1, 1:] = u_bottom
 u[:, :, (nx - 1) :] = u_right
 
 # How much noise to add to heat equation.
-# scale = 0.1
+# scale = 1.0
 scale = None
 
 u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
@@ -106,7 +106,7 @@ u = pde.heat_equation(u, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 # from matplotlib.animation import FuncAnimation
 #
 # fig, ax = plt.subplots()
-# p = ax.pcolormesh(u[0], cmap=plt.cm.jet, vmin=-150, vmax=150)
+# p = ax.pcolormesh(u[0], cmap=plt.cm.jet)
 # fig.colorbar(p)
 #
 # def animate(k):
@@ -137,7 +137,7 @@ fig.tight_layout()
 def interactive_truth(k):
     fig, ax = plt.subplots()
     fig.suptitle("True temperature field")
-    p = ax.pcolormesh(u[k], vmin=0, vmax=100)
+    p = ax.pcolormesh(u[k], cmap=plt.cm.jet)
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
     fig.tight_layout()
@@ -156,14 +156,14 @@ interact(
 pad = 1
 coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
 ncoords = coords.shape[0]
-nmeas = 64
+nmeas = 40
 coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
 obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
 obs_times = np.linspace(5, k_end, 20, endpoint=False, dtype=int)
 
-d = utils.observations(obs_coordinates, obs_times, u, lambda value: abs(0.01 * value))
+d = utils.observations(obs_coordinates, obs_times, u, lambda value: abs(0.01))
 # number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)
@@ -173,17 +173,17 @@ obs_coordinates = set(zip(d.index.get_level_values("x"), d.index.get_level_value
 x, y = zip(*obs_coordinates)
 
 fig, ax = plt.subplots()
-p = ax.pcolormesh(u[0], cmap=plt.cm.viridis, vmin=0, vmax=100)
+p = ax.pcolormesh(u[0], cmap=plt.cm.jet)
 ax.set_title("True temperature field with sensor placement")
 utils.colorbar(p)
 ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
 
 # %% [markdown]
-# # Ensemble Smoother (ES) and Iterative Ensemble Smoother (IES)
+# # Ensemble Smoother (ES)
 
 # %%
 # Number of realisations
-N = 500
+N = 100
 
 # %% [markdown]
 # ## Define random seeds because multiprocessing
@@ -260,12 +260,14 @@ fwd_runs = p_map(
 
 # %% [markdown]
 # ## Interactive plot of single realisations
+#
+# Note that every realization has the same initial temperature field at time-step `k=0`, but that the plate cools down differently because it has different material properties.
 
 # %%
 def interactive_realisations(k, n):
     fig, ax = plt.subplots()
     fig.suptitle(f"Temperature field for realisation {n}")
-    p = ax.pcolormesh(fwd_runs[n][k], vmin=0, vmax=100)
+    p = ax.pcolormesh(fwd_runs[n][k], cmap=plt.cm.jet)
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
     fig.tight_layout()
@@ -284,6 +286,7 @@ interact(
 
 # %%
 # Assume diagonal ensemble covariance matrix for the measurement perturbations.
+# Is this a big assumption?
 Cdd = np.diag(d.sd.values**2)
 
 # 9.4 Ensemble representation for measurements
@@ -317,20 +320,49 @@ assert Y.shape == (
     N,
 ), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
 
+# %% [markdown]
+# ## Deactivate sensors that measure the same temperature in all realizations
+#
+# This means that the temperature did not change at that sensor location.
+# Including these will lead to numerical issues.
+
 # %%
 enough_ens_var_idx = Y.var(axis=1) > 1e-6
-print(f"{list(enough_ens_var_idx).count(False)} measurements will be deactivated.")
+
+print(
+    f"{list(enough_ens_var_idx).count(False)} measurements will be deactivated because of ensemble collapse"
+)
 Y = Y[enough_ens_var_idx, :]
 D = D[enough_ens_var_idx, :]
 Cdd = Cdd[enough_ens_var_idx, :]
 Cdd = Cdd[:, enough_ens_var_idx]
 
 # %% [markdown]
+# ## Deactivate responses that are too far away from observations
+
+# %%
+ens_std = Y.std(axis=1)
+ens_mean = Y.mean(axis=1)
+obs_std = d.sd.values
+obs_value = d.value.values
+innov = obs_value - ens_mean
+
+is_outlier = np.abs(innov) > 3.0 * (ens_std + obs_std)
+
+print(
+    f"{list(is_outlier).count(True)} out of {Y.shape[0]} measurements will be deactivated because they are outliers"
+)
+Y = Y[~is_outlier, :]
+D = D[~is_outlier, :]
+Cdd = Cdd[~is_outlier, :]
+Cdd = Cdd[:, ~is_outlier]
+
+# %% [markdown]
 # ## Perform ES update
 
 # %%
 X = analysis.ES(Y, D, Cdd)
-A_ES = (A - A.mean(axis=1, keepdims=True)) @ X
+A_ES = A @ X
 
 # %%
 # The update may give non-physical parameter values, which here means negative heat conductivity.
@@ -342,7 +374,7 @@ A_ES = A_ES.clip(min=1e-8)
 
 # %%
 A_ES_ert = ies.ensemble_smoother_update_step(
-    Y, A - A.mean(axis=1, keepdims=True), d.sd.values, d.value.values
+    Y, A, d.sd.values[~is_outlier], d.value.values[~is_outlier]
 )
 
 # %% [markdown]
@@ -409,5 +441,4 @@ W = np.zeros(shape=(N, N))
 W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
 
-
-# %%
+assert np.isclose(X_IES, X, atol=1e-5).all()
