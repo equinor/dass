@@ -15,12 +15,6 @@
 
 # %% [markdown]
 # # EnKF using 2D heat equation
-#
-# **Note about coordinate system**
-#
-# Matplotlib's `pcolormesh` follows the standard matrix convention: "An array C with shape (nrows, ncolumns) is plotted with the column number as X and the row number as Y."
-#
-# This means that to get values at the point `(k, x, y)` of a field `u`, we must do `u[k, y, x]`.
 
 # %%
 # %load_ext autoreload
@@ -33,12 +27,16 @@ rng = np.random.default_rng()
 
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.figsize"] = (8, 8)
-plt.rcParams.update({"font.size": 12})
+plt.rcParams["figure.figsize"] = (6, 6)
+plt.rcParams.update({"font.size": 10})
+# Ignore error when drawing many figures
+plt.rcParams.update({"figure.max_open_warning": 0})
 from ipywidgets import interact
 import ipywidgets as widgets
 
 from p_tqdm import p_map
+
+from scipy.ndimage import gaussian_filter
 
 # %%
 # %autoreload 2
@@ -60,31 +58,34 @@ k_start = 0
 k_end = 300
 
 # Number of grid-cells in x and y direction
-nx = 20
+nx = 10
 
-alpha = np.ones((nx, nx)) * 5.0
-# alpha[:, nx // 2 :] = 100.0
+# Set the coefficient of heat transfer for each grid cell.
+# Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
+# It's a nice way to generate realistic-looking parameter fields.
+# In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
+alpha_t = np.exp(
+    5
+    * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
+)
+
 
 dx = 1
-dt = dx**2 / (4 * np.max(alpha))  # Max dt
-# Amount of noise in the heat equation is dependent on the value of `dt`.
-# Making this smaller adds less noise which yields less change from one step to the other.
-# dt = dt / 10.0
+dt = dx**2 / (4 * np.max(alpha_t))
 
 # True initial temperature field.
 u_top = 100.0
-u_left = 0.0
-u_bottom = 0.0
-u_right = 0.0
-u = np.empty((k_end, nx, nx))
-u.fill(0.0)
-# Set the boundary conditions
-u[:, (nx - 1) :, :] = u_top
-u[:, :, :1] = u_left
-u[:, :1, 1:] = u_bottom
-u[:, :, (nx - 1) :] = u_right
+u_init = np.empty((k_end, nx, nx))
+u_init.fill(0.0)
 
-u = pde.heat_equation(u, alpha, dx, dt, k_start, k_end, rng=rng, scale=None)
+# Set the boundary conditions
+u_init[:, 1 : (nx - 1), 0] = u_top
+
+# How much noise to add to heat equation, also called model noise.
+# scale = 0.1
+scale = None
+
+u_t = pde.heat_equation(u_init, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 
 
 # %% [markdown]
@@ -94,8 +95,9 @@ u = pde.heat_equation(u, alpha, dx, dt, k_start, k_end, rng=rng, scale=None)
 def interactive_truth(k):
     fig, ax = plt.subplots()
     fig.suptitle("True temperature field")
-    p = ax.pcolormesh(u[k], vmin=0, vmax=100)
+    p = ax.pcolormesh(u_t[k].T, cmap=plt.cm.jet)
     ax.set_title(f"k = {k}")
+    ax.invert_yaxis()
     utils.colorbar(p)
     fig.tight_layout()
 
@@ -116,51 +118,51 @@ child_seeds = ss.spawn(N)
 streams = [np.random.default_rng(s) for s in child_seeds]
 
 # %% [markdown]
-# ## Generate truth and observations based on truth
+# ## Define placement of sensors and generate synthetic observations based on the true temperature field
 
 # %%
-u = pde.heat_equation(
-    u, alpha, dx, dt, k_start, k_end, np.random.default_rng(12345), np.sqrt(dt)
-)
-
 # placement of sensors, i.e, where the observations are done
-# padding = int(0.15 * nx)
-# x = np.linspace(padding, nx - padding, 3, dtype=int)
-# y = np.linspace(padding, nx - padding, 3, dtype=int)
-# obs_coordinates = [utils.Coordinate(xc, yc) for xc in x for yc in y]
-
-obs_coordinates = [utils.Coordinate(nx // 2, nx - 2)]
+pad = 1
+coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
+ncoords = coords.shape[0]
+nmeas = 40
+coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
+obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
 obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
 
-d = utils.observations(obs_coordinates, obs_times, u, lambda value: abs(0.01 * value))
+d = utils.observations(obs_coordinates, obs_times, u_t, lambda value: abs(0.05 * value))
 # number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)
 
-# %%
+k_levels = d.index.get_level_values("k").to_list()
+x_levels = d.index.get_level_values("x").to_list()
+y_levels = d.index.get_level_values("y").to_list()
+
 # Plot temperature field and show placement of sensors.
-obs_xy = set(zip(d.index.get_level_values("x"), d.index.get_level_values("y")))
-x, y = zip(*obs_xy)
+obs_coordinates_from_index = set(zip(x_levels, y_levels))
+x, y = zip(*obs_coordinates_from_index)
 
 fig, ax = plt.subplots()
-p = ax.pcolormesh(u[100], cmap=plt.cm.viridis)
-fig.colorbar(p)
-ax.plot(x, y, "s", color="white", markersize=15)
+p = ax.pcolormesh(u_t[0].T, cmap=plt.cm.jet)
+ax.invert_yaxis()
+ax.set_title("True temperature field with sensor placement")
+utils.colorbar(p)
+ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
 
 
 # %%
 def gen_field():
     u = np.empty((k_end, nx, nx))
-    u.fill(0.0)
+
+    u_top = 100.0
+    u_init = np.empty((k_end, nx, nx))
+    u_init.fill(0.0)
 
     # Set the boundary conditions
-    # u[:, (nx - 1) :, :] = (u_top / 2) + rng.normal(0, 20, nx)
-    u[:, (nx - 1) :, :] = (u_top / 2) + rng.normal(0, 20)
-    u[:, :, :1] = u_left
-    u[:, :1, 1:] = u_bottom
-    u[:, :, (nx - 1) :] = u_right
+    u_init[:, 1 : (nx - 1), 0] = u_top + rng.normal()
 
     return u
 
@@ -177,9 +179,6 @@ def matrix_from_fields(fields, k):
     return A
 
 
-# %%
-d.index.get_level_values("k").unique()
-
 # %% [markdown]
 # ## Plot tapering function used for localisation
 
@@ -195,7 +194,7 @@ for k_obs in d.index.get_level_values("k").unique().to_list():
     fields = p_map(
         pde.heat_equation,
         fields,
-        [alpha] * N,
+        [alpha_t] * N,
         [dx] * N,
         [dt] * N,
         [k_start] * N,
@@ -214,10 +213,9 @@ for k_obs in d.index.get_level_values("k").unique().to_list():
     # measure response
     Y = np.zeros(shape=(m, N))
     for i in range(N):
-        # It's A[y, x] and not A[x, y] due to convention followed by matplotlib's pcolormesh.
         Y[:, i] = A[:, i].reshape(nx, nx)[
-            d_k.index.get_level_values("y").to_list(),
             d_k.index.get_level_values("x").to_list(),
+            d_k.index.get_level_values("y").to_list(),
         ]
 
     Cdd = np.diag(d_k.sd.values**2)
@@ -237,8 +235,8 @@ for k_obs in d.index.get_level_values("k").unique().to_list():
         for i in range(nx**2):
             state_idx = np.unravel_index(i, shape=(nx, nx))
             dist = np.sqrt(
-                (state_idx[0] - obs_coordinates[0].y) ** 2
-                + (state_idx[1] - obs_coordinates[0].x) ** 2
+                (state_idx[0] - obs_coordinates[0].x) ** 2
+                + (state_idx[1] - obs_coordinates[0].y) ** 2
             )
             taper_coeff = taper.gauss(dist, 2.0)
 
@@ -290,15 +288,17 @@ def updated_vs_truth(k):
     A_with_update = matrix_from_fields(fields, k)
 
     axes[0].set_title("With update")
+    axes[0].invert_yaxis()
     p0 = axes[0].pcolormesh(
-        A_with_update.mean(axis=1).reshape(nx, nx),
+        A_with_update.mean(axis=1).reshape(nx, nx).T,
         cmap=plt.cm.viridis,
         vmin=vmin,
         vmax=vmax,
     )
 
     axes[1].set_title("Truth")
-    p1 = axes[1].pcolormesh(u[k], cmap=plt.cm.viridis, vmin=vmin, vmax=vmax)
+    axes[1].invert_yaxis()
+    p1 = axes[1].pcolormesh(u_t[k].T, cmap=plt.cm.viridis, vmin=vmin, vmax=vmax)
 
     utils.colorbar(p1)
 

@@ -153,6 +153,54 @@ df_IES_ert = pd.DataFrame({"Iteration": [0] * len(A_IES_ert), "Value": A_IES_ert
 df_ESMDA = pd.DataFrame({"Iteration": [0] * len(A_ESMDA), "Value": A_ESMDA})
 
 # %% [markdown]
+# ## Running ES for reference
+
+# %%
+A_ES = A_IES.copy()
+
+fwd_runs = p_map(
+    pde.burgers,
+    [nx] * N,
+    [ny] * N,
+    [k_end] * N,
+    A_ES,
+    desc=f"Running forward model.",
+)
+
+# Assume diagonal ensemble covariance matrix for the measurement perturbations.
+Cdd = np.diag(d.sd.values**2)
+
+# 9.4 Ensemble representation for measurements
+E = rng.multivariate_normal(mean=np.zeros(len(Cdd)), cov=Cdd, size=N).T
+E = E - E.mean(axis=1, keepdims=True)
+assert E.shape == (m, N)
+
+D = np.ones((m, N)) * d.value.values.reshape(-1, 1) + E
+
+Y = np.array(
+    [
+        fwd_run[
+            d.index.get_level_values("k").to_list(),
+            d.index.get_level_values("y").to_list(),
+            d.index.get_level_values("x").to_list(),
+        ]
+        for fwd_run in fwd_runs
+    ]
+).T
+
+# We expect that a certain number of points gets deactivated,
+# since not all cells are changing values due to the way the model works.
+enough_ens_var_idx = Y.var(axis=1) > 1e-6
+print(f"{list(enough_ens_var_idx).count(False)} measurements will be deactivated.")
+Y = Y[enough_ens_var_idx, :]
+D = D[enough_ens_var_idx, :]
+Cdd = Cdd[enough_ens_var_idx, :]
+Cdd = Cdd[:, enough_ens_var_idx]
+
+X = analysis.ES(Y, D, Cdd)
+A_ES = A_ES @ X
+
+# %% [markdown]
 # ## Running `dass`'s implementation of IES
 
 # %%
