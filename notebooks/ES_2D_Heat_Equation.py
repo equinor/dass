@@ -47,7 +47,7 @@ from dass import pde, utils, analysis, taper
 # ## Define ensemble size and parameters related to the simulator
 
 # %%
-N = 100
+N = 50
 
 # Number of grid-cells in x and y direction
 nx = 10
@@ -109,7 +109,9 @@ u_init = np.empty((k_end, nx, nx))
 u_init.fill(0.0)
 
 # Set the boundary conditions
-u_init[:, 1 : (nx - 1), 0] = u_top
+# u_init[:, 1 : (nx - 1), nx // 2] = u_top
+u_init[:, 7, 7] = 100
+u_init[:, 2, 2] = 100
 
 # How much noise to add to heat equation, also called model noise.
 # scale = 0.1
@@ -173,17 +175,22 @@ interact(
 
 # %%
 # placement of sensors, i.e, where the observations are done
-pad = 1
-coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
-ncoords = coords.shape[0]
-nmeas = 40
-coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
-obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
+# pad = 1
+# coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
+# ncoords = coords.shape[0]
+# nmeas = 40
+# coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
+# obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
+
+# obs_coordinates = [utils.Coordinate(5, 4), utils.Coordinate(8, 8)]
+obs_coordinates = [utils.Coordinate(2, 2), utils.Coordinate(7, 7)]
 
 # At which times observations are taken
-obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
+obs_times = np.linspace(5, k_end, 20, endpoint=False, dtype=int)
 
-d = utils.observations(obs_coordinates, obs_times, u_t, lambda value: abs(0.05 * value))
+d = utils.observations(
+    obs_coordinates, obs_times, u_t, lambda value: max(0.1, 0.1 * value)
+)
 # number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)
@@ -279,6 +286,139 @@ interact(
 )
 
 # %% [markdown]
+# ## Measure model response at points in time and space where we have observations
+
+# %%
+Y_df = pd.DataFrame({"k": k_levels, "x": x_levels, "y": y_levels})
+
+for real, fwd_run in enumerate(fwd_runs):
+    Y_df = Y_df.assign(**{f"R{real}": fwd_run[k_levels, x_levels, y_levels]})
+
+Y_df = Y_df.set_index(["k", "x", "y"], verify_integrity=True)
+
+# %%
+Y = Y_df.values
+
+assert Y.shape == (
+    m,
+    N,
+), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
+
+enough_ens_var_idx = Y.var(axis=1) > 1e-6
+
+# Deactivate sensors that measure the same temperature in all realizations
+# This means that the temperature did not change at that sensor location.
+# Including these will lead to numerical issues.
+
+print(
+    f"{list(enough_ens_var_idx).count(False)} measurements will be deactivated because of ensemble collapse"
+)
+Y = Y[enough_ens_var_idx, :]
+Y_df = Y_df.iloc[enough_ens_var_idx, :]
+d = d[enough_ens_var_idx]
+
+# Deactivate responses that are too far away from observations
+
+ens_std = Y.std(axis=1)
+ens_mean = Y.mean(axis=1)
+innov = d.value.values - ens_mean
+
+is_outlier = np.abs(innov) > 3.0 * (ens_std + d.sd.values)
+
+print(
+    f"{list(is_outlier).count(True)} out of {Y.shape[0]} measurements will be deactivated because they are outliers"
+)
+Y = Y[~is_outlier, :]
+d = d[~is_outlier]
+
+m = d.shape[0]
+
+# %% [markdown]
+# ## WIP - Misfit Preprocessor
+
+# %%
+MISFIT_PREPROCESSOR = True
+if MISFIT_PREPROCESSOR:
+    from scipy.cluster.hierarchy import linkage, fcluster
+
+    def get_nr_primary_components(responses, threshold):
+        """
+        Takes a matrix, does PCA and calculates the cumulative variance ratio
+        and returns an int which is the number of primary components where
+        the cumulative variance is smaller than user set threshold. Notice the
+        way of calculating number of primary components. This is done to
+        replicate existing behavior:
+
+        int num_significant  = 0;
+        {
+        double running_sigma2  = 0;
+        for (int i=0; i < num_singular_values; i++) {
+          if (running_sigma2 / total_sigma2 < truncation) {
+             num_significant++;
+             running_sigma2 += sig0[i] * sig0[i];
+          } else
+             break;
+        }
+
+        Also returns an array of singular values.
+        """
+        responses = responses - responses.mean(axis=0)
+        _, singulars, _ = np.linalg.svd(responses, full_matrices=False)
+        variance_ratio = np.cumsum(singulars**2) / np.sum(singulars**2)
+        return len([1 for i in variance_ratio[:-1] if i < threshold]) + 1
+
+    # TODO: Try using PCA from sklearn
+    # from sklearn.decomposition import PCA
+    # pca = PCA(n_components=0.99, svd_solver="full")
+    # pca.fit(df_misfit)
+    # pca.explained_variance_
+
+    # Scale simulated data
+    # df_misfit = Y_df.T / d.sd.values # TODO: Think this through as sd can be 0 or close to 0 in the current set-up
+    df_misfit = Y_df.T
+
+    correlation_matrix = df_misfit.corr(method="spearman")
+
+    max_nr_components = get_nr_primary_components(responses=df_misfit, threshold=0.95)
+
+    Z = linkage(correlation_matrix, method="average", metric="euclidean")
+
+    flat_clusters = fcluster(Z, t=max_nr_components, criterion="maxclust")
+
+    d["cluster"] = flat_clusters
+
+    g = d.groupby("cluster")
+
+    nobs = g.count()["value"]
+    df_nobs = pd.DataFrame(nobs.values, index=nobs.index, columns=["nobs_in_cluster"])
+
+    d = d.join(df_nobs, on="cluster")
+
+    npca_in_cluster = pd.DataFrame(
+        {"cluster": pd.Series(dtype=int), "npca_in_cluster": pd.Series(dtype=int)}
+    )
+    for cluster in np.unique(flat_clusters):
+        # Use indices from observation data-frame to select responses.
+        _d_idx = d.query(f"cluster == {cluster}").index
+        _responses = Y_df.loc[_d_idx, :]
+        ncomponents = get_nr_primary_components(_responses, threshold=0.95)
+        npca_in_cluster = pd.concat(
+            [
+                npca_in_cluster,
+                pd.DataFrame({"cluster": [cluster], "npca_in_cluster": [ncomponents]}),
+            ]
+        )
+    npca_in_cluster = npca_in_cluster.set_index(["cluster"], verify_integrity=True)
+
+    d = d.join(npca_in_cluster, on="cluster")
+
+    d["scaling_factor"] = np.sqrt(d["nobs_in_cluster"] / d["npca_in_cluster"])
+
+    d["sd"] = d["sd"] * d["scaling_factor"]
+
+    display(d)
+
+# %% [markdown]
 # ## Ensemble representation for measurements (Section 9.4 of [1])
 #
 # Note that Evensen calls measurements what ERT calls observations.
@@ -300,26 +440,7 @@ assert E.shape == (m, N)
 D = np.ones((m, N)) * d.value.values.reshape(-1, 1) + E
 
 # %% [markdown]
-# ## Measure model response at points in time and space where we have observations
-
-# %%
-Y_df = pd.DataFrame({"k": k_levels, "x": x_levels, "y": y_levels})
-
-for real, fwd_run in enumerate(fwd_runs):
-    Y_df = Y_df.assign(**{f"R{real}": fwd_run[k_levels, x_levels, y_levels]})
-
-Y_df = Y_df.set_index(["k", "x", "y"], verify_integrity=True)
-
-# %%
-Y = Y_df.values
-
-assert Y.shape == (
-    m,
-    N,
-), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
-
-# %% [markdown]
-# ## Checkig coverage
+# ## Checking coverage
 #
 # There's good coverage if there is overlap between observations and responses at sensor points.
 
@@ -338,7 +459,7 @@ for sensor_coordinates in obs_coordinates:
     y_sensor = df_single_sensor["value"]
     yerr_sensor = df_single_sensor["sd"]
 
-    k_sensor = np.unique(k_levels)
+    k_sensor = df_single_sensor.index.get_level_values("k")
     ax.errorbar(
         k_sensor,
         y_sensor,
@@ -357,48 +478,11 @@ for sensor_coordinates in obs_coordinates:
     )
     ax.plot(
         k_sensor,
-        u_t[np.unique(k_levels), sensor_coordinates.x, sensor_coordinates.y],
+        u_t[k_sensor, sensor_coordinates.x, sensor_coordinates.y],
         color="black",
     )
 
     fig.tight_layout()
-
-# %% [markdown]
-# ## Deactivate sensors that measure the same temperature in all realizations
-#
-# This means that the temperature did not change at that sensor location.
-# Including these will lead to numerical issues.
-
-# %%
-enough_ens_var_idx = Y.var(axis=1) > 1e-6
-
-print(
-    f"{list(enough_ens_var_idx).count(False)} measurements will be deactivated because of ensemble collapse"
-)
-Y = Y[enough_ens_var_idx, :]
-D = D[enough_ens_var_idx, :]
-Cdd = Cdd[enough_ens_var_idx, :]
-Cdd = Cdd[:, enough_ens_var_idx]
-
-# %% [markdown]
-# ## Deactivate responses that are too far away from observations
-
-# %%
-ens_std = Y.std(axis=1)
-ens_mean = Y.mean(axis=1)
-obs_std = d.sd.values[enough_ens_var_idx]
-obs_value = d.value.values[enough_ens_var_idx]
-innov = obs_value - ens_mean
-
-is_outlier = np.abs(innov) > 3.0 * (ens_std + obs_std)
-
-print(
-    f"{list(is_outlier).count(True)} out of {Y.shape[0]} measurements will be deactivated because they are outliers"
-)
-Y = Y[~is_outlier, :]
-D = D[~is_outlier, :]
-Cdd = Cdd[~is_outlier, :]
-Cdd = Cdd[:, ~is_outlier]
 
 # %% [markdown]
 # ## Perform ES update
@@ -423,8 +507,8 @@ A_ES = A_ES.clip(min=1e-8)
 A_ES_ert = ies.ensemble_smoother_update_step(
     Y,
     A,
-    obs_std[~is_outlier],
-    obs_value[~is_outlier],
+    d.sd.values,
+    d.value.values,
     inversion=ies.InversionType.EXACT,
 )
 
@@ -499,3 +583,5 @@ W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
 
 assert np.isclose(X_IES, X, atol=1e-5).all()
+
+# %%
