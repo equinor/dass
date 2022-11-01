@@ -104,12 +104,14 @@ alpha_t = np.exp(
 dt = dx**2 / (4 * max(np.max(A), np.max(alpha_t)))
 
 # True initial temperature field.
-u_top = 100.0
 u_init = np.empty((k_end, nx, nx))
 u_init.fill(0.0)
 
-# Set the boundary conditions
-u_init[:, 1 : (nx - 1), 0] = u_top
+# Heating the plate at two points initially.
+# How you define initial conditions will effect the spread of results,
+# i.e., how similar different realisations are.
+u_init[:, 7, 7] = 100
+u_init[:, 2, 2] = 100
 
 # How much noise to add to heat equation, also called model noise.
 # scale = 0.1
@@ -416,10 +418,6 @@ A_ES = A_ES.clip(min=1e-8)
 # ## Testing the new iterative_ensemble_smoother package
 
 # %%
-# A_ES_ert = ies.ensemble_smoother_update_step(
-#    Y, A, d.sd.values[~is_outlier], d.value.values[~is_outlier], inversion=ies.InversionType.SUBSPACE_RE
-# )
-
 A_ES_ert = ies.ensemble_smoother_update_step(
     Y,
     A,
@@ -499,3 +497,5 @@ W = analysis.IES(Y, D, Cdd, W, gamma)
 X_IES = np.identity(N) + W
 
 assert np.isclose(X_IES, X, atol=1e-5).all()
+
+# %%
