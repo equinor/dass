@@ -47,7 +47,7 @@ from dass import pde, utils, analysis, taper
 # ## Define ensemble size and parameters related to the simulator
 
 # %%
-N = 100
+N = 50
 
 # Number of grid-cells in x and y direction
 nx = 10
@@ -321,7 +321,7 @@ assert Y.shape == (
 ), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
 
 # %% [markdown]
-# ## Checkig coverage
+# ## Checking coverage
 #
 # There's good coverage if there is overlap between observations and responses at sensor points.
 
@@ -403,11 +403,54 @@ Cdd = Cdd[~is_outlier, :]
 Cdd = Cdd[:, ~is_outlier]
 
 # %% [markdown]
+# ## Adaptive localization
+#
+# Localization with correlation used as distance.
+
+# %%
+Y_prime = Y - Y.mean(axis=1, keepdims=True)
+C_YY = Y_prime @ Y_prime.T / (N - 1)
+Sigma_Y = np.diag(np.sqrt(np.diag(C_YY)))
+corr_trunc = 0.5
+
+A_ES_loc = []
+
+for A_chunk in np.array_split(A, indices_or_sections=10):
+    A_prime = A_chunk - A_chunk.mean(axis=1, keepdims=True)
+    C_AA = A_prime @ A_prime.T / (N - 1)
+
+    # State-measurement covariance matrix
+    C_AY = A_prime @ Y_prime.T / (N - 1)
+    Sigma_A = np.diag(np.sqrt(np.diag(C_AA)))
+
+    # State-measurement correlation matrix
+    c_AY = np.linalg.inv(Sigma_A) @ C_AY @ np.linalg.inv(Sigma_Y)
+
+    _, corr_idx_Y = np.where(np.triu(np.abs(c_AY)) > corr_trunc)
+    corr_idx_Y = np.unique(corr_idx_Y)
+
+    Y_loc = Y[corr_idx_Y, :]
+    D_loc = D[corr_idx_Y, :]
+    Cdd_loc = Cdd[corr_idx_Y, :]
+    Cdd_loc = Cdd_loc[:, corr_idx_Y]
+
+    X_loc = analysis.ES(Y_loc, D_loc, Cdd_loc)
+    A_ES_loc.append(A_chunk @ X_loc)
+
+A_ES_loc = np.vstack(A_ES_loc)
+
+# %% [markdown]
 # ## Perform ES update
 
 # %%
 X = analysis.ES(Y, D, Cdd)
 A_ES = A @ X
+
+# %%
+# Sanity check as the results should be the same
+# with and without localization when correlation truncation is set to zero.
+if corr_trunc == 0.0:
+    assert np.isclose(A_ES, A_ES_loc, atol=1e-5).all()
 
 # %%
 # The update may give non-physical parameter values, which here means negative heat conductivity.
@@ -416,15 +459,19 @@ A_ES = A_ES.clip(min=1e-8)
 
 # %% [markdown]
 # ## Testing the new iterative_ensemble_smoother package
-
-# %%
-A_ES_ert = ies.ensemble_smoother_update_step(
-    Y,
-    A,
-    obs_std[~is_outlier],
-    obs_value[~is_outlier],
-    inversion=ies.InversionType.EXACT,
-)
+#
+# As part of ERT development, we wrote an efficient implementation of the iterative ensemble smoother.
+# This package is available via pypi and you can easily test it out here if you wish.
+#
+# ```python
+# A_ES_ert = ies.ensemble_smoother_update_step(
+#     Y,
+#     A,
+#     obs_std[~is_outlier],
+#     obs_value[~is_outlier],
+#     inversion=ies.InversionType.EXACT,
+# )
+# ```
 
 # %% [markdown]
 # ## Comparing prior and posterior
@@ -440,8 +487,8 @@ err_posterior = alpha_t.ravel() - A_ES.mean(axis=1)
 np.sqrt(np.mean(err_posterior * err_posterior))
 
 # %%
-err_posterior_ert = alpha_t.ravel() - A_ES_ert.mean(axis=1)
-np.sqrt(np.mean(err_posterior_ert * err_posterior_ert))
+err_posterior_loc = alpha_t.ravel() - A_ES_loc.mean(axis=1)
+np.sqrt(np.mean(err_posterior_loc * err_posterior_loc))
 
 # %%
 err_prior = alpha_t.ravel() - A.mean(axis=1)
@@ -453,7 +500,7 @@ fig.set_size_inches(10, 10)
 
 ax[0].set_title(f"Posterior dass")
 ax[0].invert_yaxis()
-ax[1].set_title(f"Posterior ert")
+ax[1].set_title(f"Posterior localization")
 ax[1].invert_yaxis()
 ax[2].set_title(f"Truth")
 ax[2].invert_yaxis()
@@ -463,7 +510,7 @@ ax[3].invert_yaxis()
 vmin = 8
 vmax = 20
 p0 = ax[0].pcolormesh(A_ES.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
-p1 = ax[1].pcolormesh(A_ES_ert.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+p1 = ax[1].pcolormesh(A_ES_loc.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
 p2 = ax[2].pcolormesh(alpha_t.T, vmin=vmin, vmax=vmax)
 p3 = ax[3].pcolormesh(A.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
 
