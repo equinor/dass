@@ -66,6 +66,9 @@ k_end = 100
 # List of matrices of size (nx, nx) containing priors.
 # The reason for having a list is that `p_map` requires it.
 # `p_map` runs stuff in parallel.
+# Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
+# It's a nice way to generate realistic-looking parameter fields.
+# In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
 alphas = []
 for i in range(N):
     alpha = np.exp(
@@ -91,9 +94,6 @@ for e in range(N):
 dx = 1
 
 # Set the coefficient of heat transfer for each grid cell.
-# Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
-# It's a nice way to generate realistic-looking parameter fields.
-# In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
 alpha_t = np.exp(
     5
     * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
@@ -178,12 +178,12 @@ interact(
 pad = 1
 coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
 ncoords = coords.shape[0]
-nmeas = 40
+nmeas = 10
 coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
 obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
-obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
+obs_times = np.linspace(5, k_end, 5, endpoint=False, dtype=int)
 
 d = utils.observations(obs_coordinates, obs_times, u_t, lambda value: abs(0.05 * value))
 # number of measurements
@@ -411,33 +411,84 @@ Cdd = Cdd[:, ~is_outlier]
 Y_prime = Y - Y.mean(axis=1, keepdims=True)
 C_YY = Y_prime @ Y_prime.T / (N - 1)
 Sigma_Y = np.diag(np.sqrt(np.diag(C_YY)))
-corr_trunc = 0.5
 
-A_ES_loc = []
 
-for A_chunk in np.array_split(A, indices_or_sections=10):
-    A_prime = A_chunk - A_chunk.mean(axis=1, keepdims=True)
-    C_AA = A_prime @ A_prime.T / (N - 1)
+# %%
+def localization_one_param_at_time(correlation_threshold):
+    A_ES_loc = []
+    for i in range(A.shape[0]):
+        A_chunk = A[i, :].reshape(1, N)
+        A_prime = A_chunk - A_chunk.mean(axis=1, keepdims=True)
+        C_AA = A_prime @ A_prime.T / (N - 1)
 
-    # State-measurement covariance matrix
-    C_AY = A_prime @ Y_prime.T / (N - 1)
-    Sigma_A = np.diag(np.sqrt(np.diag(C_AA)))
+        # State-measurement covariance matrix
+        C_AY = A_prime @ Y_prime.T / (N - 1)
+        Sigma_A = np.diag(np.sqrt(np.diag(C_AA)))
 
-    # State-measurement correlation matrix
-    c_AY = np.linalg.inv(Sigma_A) @ C_AY @ np.linalg.inv(Sigma_Y)
+        # State-measurement correlation matrix
+        c_AY = np.linalg.inv(Sigma_A) @ C_AY @ np.linalg.inv(Sigma_Y)
 
-    _, corr_idx_Y = np.where(np.triu(np.abs(c_AY)) > corr_trunc)
-    corr_idx_Y = np.unique(corr_idx_Y)
+        _, corr_idx_Y = np.where(np.abs(c_AY) > correlation_threshold)
 
-    Y_loc = Y[corr_idx_Y, :]
-    D_loc = D[corr_idx_Y, :]
-    Cdd_loc = Cdd[corr_idx_Y, :]
-    Cdd_loc = Cdd_loc[:, corr_idx_Y]
+        Y_loc = Y[corr_idx_Y, :]
+        D_loc = D[corr_idx_Y, :]
+        Cdd_loc = Cdd[corr_idx_Y, :]
+        Cdd_loc = Cdd_loc[:, corr_idx_Y]
 
-    X_loc = analysis.ES(Y_loc, D_loc, Cdd_loc)
-    A_ES_loc.append(A_chunk @ X_loc)
+        X_loc = analysis.ES(Y_loc, D_loc, Cdd_loc)
+        A_ES_loc.append(A_chunk @ X_loc)
+    return np.vstack(A_ES_loc)
 
-A_ES_loc = np.vstack(A_ES_loc)
+
+# %%
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics import pairwise_distances
+
+df_A = pd.DataFrame(A)
+distances = pairwise_distances(df_A, metric="correlation")
+clusters = AgglomerativeClustering(
+    n_clusters=10, affinity="precomputed", linkage="average"
+).fit(distances)
+df_A["clusters"] = clusters.labels_
+print("TODO: How many parameters is OK to have in each cluster?")
+df_A.groupby("clusters").count()[0]
+
+
+# %%
+def localization_with_clusters(correlation_threshold):
+    A_ES_loc = []
+    for cluster in np.unique(clusters.labels_):
+        A_chunk = df_A.query(f"clusters == {cluster}").drop("clusters", axis=1)
+        A_prime = A_chunk - A_chunk.mean(axis=0)
+        C_AA = A_prime @ A_prime.T / (N - 1)
+
+        # State-measurement covariance matrix
+        C_AY = A_prime @ Y_prime.T / (N - 1)
+        Sigma_A = np.diag(np.sqrt(np.diag(C_AA)))
+
+        # State-measurement correlation matrix
+        c_AY = np.linalg.inv(Sigma_A) @ C_AY @ np.linalg.inv(Sigma_Y)
+        _, corr_idx_Y = np.where(np.abs(c_AY) > correlation_threshold)
+        corr_idx_Y = np.unique(corr_idx_Y)
+
+        Y_loc = Y[corr_idx_Y, :]
+        D_loc = D[corr_idx_Y, :]
+        Cdd_loc = Cdd[corr_idx_Y, :]
+        Cdd_loc = Cdd_loc[:, corr_idx_Y]
+
+        X_loc = analysis.ES(Y_loc, D_loc, Cdd_loc)
+        A_ES_loc.append(A_chunk @ X_loc)
+    return pd.concat(A_ES_loc).sort_index()
+
+
+# %%
+# NB! Remember to check that the results are the same with and without localization
+# whenever `correlation_threshold=0`.
+correlation_threshold = 0.4
+A_ES_loc = localization_one_param_at_time(correlation_threshold)
+
+# %%
+A_ES_loc_clusters = localization_with_clusters(correlation_threshold)
 
 # %% [markdown]
 # ## Perform ES update
@@ -449,7 +500,7 @@ A_ES = A @ X
 # %%
 # Sanity check as the results should be the same
 # with and without localization when correlation truncation is set to zero.
-if corr_trunc == 0.0:
+if correlation_threshold == 0.0:
     assert np.isclose(A_ES, A_ES_loc, atol=1e-5).all()
 
 # %%
@@ -491,6 +542,10 @@ err_posterior_loc = alpha_t.ravel() - A_ES_loc.mean(axis=1)
 np.sqrt(np.mean(err_posterior_loc * err_posterior_loc))
 
 # %%
+err_posterior_loc_clusters = alpha_t.ravel() - A_ES_loc_clusters.mean(axis=1)
+np.sqrt(np.mean(err_posterior_loc_clusters * err_posterior_loc_clusters))
+
+# %%
 err_prior = alpha_t.ravel() - A.mean(axis=1)
 np.sqrt(np.mean(err_prior * err_prior))
 
@@ -510,7 +565,9 @@ ax[3].invert_yaxis()
 vmin = 8
 vmax = 20
 p0 = ax[0].pcolormesh(A_ES.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
-p1 = ax[1].pcolormesh(A_ES_loc.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+p1 = ax[1].pcolormesh(
+    A_ES_loc_clusters.mean(axis=1).to_numpy().reshape(nx, nx).T, vmin=vmin, vmax=vmax
+)
 p2 = ax[2].pcolormesh(alpha_t.T, vmin=vmin, vmax=vmax)
 p3 = ax[3].pcolormesh(A.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
 
