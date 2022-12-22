@@ -21,7 +21,10 @@ import numpy as np
 import pandas as pd
 
 np.set_printoptions(suppress=True)
-rng = np.random.default_rng()
+# Relatively easy to find good solution
+rng = np.random.default_rng(1234)
+# More difficult
+# rng = np.random.default_rng(100)
 
 import matplotlib.pyplot as plt
 
@@ -41,7 +44,7 @@ import iterative_ensemble_smoother as ies
 # %%
 # %load_ext autoreload
 # %autoreload 2
-from dass import pde, utils, analysis, taper
+from dass import pde, utils, analysis, taper, geostat
 
 # %% [markdown]
 # ## Define ensemble size and parameters related to the simulator
@@ -54,33 +57,55 @@ nx = 10
 
 # time steps
 k_start = 0
-k_end = 100
+k_end = 500
 
 # %% [markdown]
 # ## Define prior
 #
 # The Ensemble Smoother searches for solutions in `Ensemble Subspace`, which means that it tries to find a linear combination of the priors that best fit the observed data.
 # A good prior is therefore vital.
+#
+# Some fields are trickier to solve than others.
+# Here are two ways of defining a prior, one more complex or difficult to solve for than the other.
 
 # %%
-# List of matrices of size (nx, nx) containing priors.
-# The reason for having a list is that `p_map` requires it.
-# `p_map` runs stuff in parallel.
-alphas = []
-for i in range(N):
-    alpha = np.exp(
-        5
-        * gaussian_filter(
-            gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
-        )
-    )
-    alphas.append(alpha)
+complex_prior = True
+
+
+def sample_prior_perm(N):
+    mesh = np.meshgrid(np.linspace(0, 1, nx), np.linspace(0, 1, nx))
+    lperms = np.exp(geostat.gaussian_fields(mesh, rng, N, r=0.8))
+    return lperms
+
 
 # Evensens' formulation of the Ensemble Smoother has the prior as
 # a (nx * nx, N) matrix, i.e (number of parameters, N).
-A = np.zeros(shape=(nx * nx, N))
-for e in range(N):
-    A[:, e] = alphas[e].ravel()
+if complex_prior:
+    A = sample_prior_perm(N).T
+
+    alphas = []
+    for j in range(A.shape[1]):
+        alphas.append(A[:, j].reshape(nx, nx))
+
+else:
+    alphas = []
+    for i in range(N):
+        alpha = np.exp(
+            5
+            * gaussian_filter(
+                gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
+            )
+        )
+        alphas.append(alpha)
+
+    A = np.zeros(shape=(nx * nx, N))
+    for e in range(N):
+        A[:, e] = alphas[e].ravel()
+
+# %%
+# Putting multiple 2D matrices into a single matrix and from that calculate covariance matrices
+# leads to a somewhat strange looking matrix.
+plt.matshow(np.cov(A))
 
 # %% [markdown]
 # ## Define true parameters, set true initial conditions and calculate the true temperature field
@@ -90,14 +115,19 @@ for e in range(N):
 # %%
 dx = 1
 
-# Set the coefficient of heat transfer for each grid cell.
-# Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
-# It's a nice way to generate realistic-looking parameter fields.
-# In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
-alpha_t = np.exp(
-    5
-    * gaussian_filter(gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0)
-)
+if complex_prior:
+    # Set the coefficient of heat transfer for each grid cell.
+    alpha_t = sample_prior_perm(1).T.reshape(nx, nx)
+else:
+    # Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
+    # It's a nice way to generate realistic-looking parameter fields.
+    # In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
+    alpha_t = np.exp(
+        5
+        * gaussian_filter(
+            gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
+        )
+    )
 
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
@@ -110,8 +140,8 @@ u_init.fill(0.0)
 # Heating the plate at two points initially.
 # How you define initial conditions will effect the spread of results,
 # i.e., how similar different realisations are.
-u_init[:, 7, 7] = 100
-u_init[:, 2, 2] = 100
+u_init[:, 5, 5] = 100
+# u_init[:, 6, 6] = 100
 
 # How much noise to add to heat equation, also called model noise.
 # scale = 0.1
@@ -158,7 +188,7 @@ fig.tight_layout()
 def interactive_truth(k):
     fig, ax = plt.subplots()
     fig.suptitle("True temperature field")
-    p = ax.pcolormesh(u_t[k].T, cmap=plt.cm.jet)
+    p = ax.pcolormesh(u_t[k].T, cmap=plt.cm.jet, vmin=0, vmax=100)
     ax.invert_yaxis()
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
@@ -174,16 +204,32 @@ interact(
 # ## Define placement of sensors and generate synthetic observations based on the true temperature field
 
 # %%
-# placement of sensors, i.e, where the observations are done
-pad = 1
-coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
-ncoords = coords.shape[0]
-nmeas = 40
-coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
-obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
+# Heat sources are kind of like injection wells
+# We can think about heat sources as injection wells.
+# Sensors would then typically be placed where we have production wells.
+# We'll place the sensors close to heat-sources because the plate cools of quite quickly.
+obs_coordinates = [
+    utils.Coordinate(5, 3),
+    utils.Coordinate(3, 5),
+    utils.Coordinate(5, 7),
+    utils.Coordinate(7, 5),
+    utils.Coordinate(2, 2),
+    utils.Coordinate(7, 2),
+]
+
+# Random placement of sensors
+# Try adding a lot of sensors to see how the fit changes.
+# As a side-note, in a reservoir setting, we might drill horizontal wells so sensors
+# may in fact be placed quite far away from whever we started drilling a production well.
+# pad = 1
+# coords = np.array([(x, y) for x in range(pad, nx - pad) for y in range(pad, nx - pad)])
+# ncoords = coords.shape[0]
+# nmeas = 10
+# coords_idx = np.random.choice(np.arange(ncoords), size=nmeas, replace=False)
+# obs_coordinates = [utils.Coordinate(xc, yc) for xc, yc in coords[coords_idx]]
 
 # At which times observations are taken
-obs_times = np.linspace(5, k_end, 50, endpoint=False, dtype=int)
+obs_times = np.linspace(5, k_end, 8, endpoint=False, dtype=int)
 
 d = utils.observations(obs_coordinates, obs_times, u_t, lambda value: abs(0.05 * value))
 # number of measurements
@@ -230,7 +276,7 @@ def interactive_prior_fields(n):
     fig, ax = plt.subplots()
     ax.set_title(f"Prior field {n}")
     ax.invert_yaxis()
-    p = ax.pcolormesh(alphas[n].T, vmin=5, vmax=25)
+    p = ax.pcolormesh(alphas[n].T)
     utils.colorbar(p)
     fig.tight_layout()
 
@@ -268,7 +314,7 @@ def interactive_realisations(k, n):
     fig, ax = plt.subplots()
     ax.invert_yaxis()
     fig.suptitle(f"Temperature field for realisation {n}")
-    p = ax.pcolormesh(fwd_runs[n][k].T, cmap=plt.cm.jet)
+    p = ax.pcolormesh(fwd_runs[n][k].T, cmap=plt.cm.jet, vmin=0, vmax=100)
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
     fig.tight_layout()
@@ -320,50 +366,75 @@ assert Y.shape == (
     N,
 ), "Measured responses must be a matrix with dimensions (number of observations x number of realisations)"
 
+
 # %% [markdown]
 # ## Checking coverage
 #
 # There's good coverage if there is overlap between observations and responses at sensor points.
 
 # %%
-for sensor_coordinates in obs_coordinates:
-    fig, ax = plt.subplots()
-    ax.set_title(
-        f"Sensor readings at coordinate {sensor_coordinates.x, sensor_coordinates.y}"
-    )
-    ax.set_ylabel("Temperature")
-    ax.set_xlabel("Time step $k$")
-    ax.grid()
+def plot_responses(
+    time_steps,
+    observations,
+    responses_ensemble,
+    response_truth,
+    responses_ensemble_post=None,
+):
+    x_levels = observations.index.get_level_values("x").to_list()
+    y_levels = observations.index.get_level_values("y").to_list()
 
-    df_single_sensor = d.query(f"x=={sensor_coordinates.x} & y=={sensor_coordinates.y}")
+    obs_coordinates = set(zip(x_levels, y_levels))
 
-    y_sensor = df_single_sensor["value"]
-    yerr_sensor = df_single_sensor["sd"]
+    for x, y in obs_coordinates_from_index:
+        fig, ax = plt.subplots()
+        ax.set_title(f"Sensor readings at coordinate {x, y}")
+        ax.set_ylabel("Temperature")
+        ax.set_xlabel("Time step $k$")
+        ax.grid()
 
-    k_sensor = np.unique(k_levels)
-    ax.errorbar(
-        k_sensor,
-        y_sensor,
-        yerr_sensor,
-        ecolor="red",
-        capsize=10,
-        elinewidth=1,
-        markeredgewidth=1,
-    )
+        df_single_sensor = observations.query(f"x=={x} & y=={y}")
 
-    ax.plot(
-        k_sensor,
-        Y_df.query(f"x=={sensor_coordinates.x} & y=={sensor_coordinates.y}"),
-        color="gray",
-        alpha=0.2,
-    )
-    ax.plot(
-        k_sensor,
-        u_t[np.unique(k_levels), sensor_coordinates.x, sensor_coordinates.y],
-        color="black",
-    )
+        y_sensor = df_single_sensor["value"]
+        yerr_sensor = df_single_sensor["sd"]
 
-    fig.tight_layout()
+        ax.errorbar(
+            time_steps,
+            y_sensor,
+            yerr_sensor,
+            ecolor="red",
+            capsize=10,
+            elinewidth=1,
+            markeredgewidth=1,
+        )
+
+        ax.plot(
+            time_steps,
+            responses_ensemble.query(f"x=={x} & y=={y}"),
+            color="gray",
+            alpha=0.2,
+            label="_nolegend_",
+        )
+        ax.plot([], [], "gray", label="Prior responses")
+
+        ax.plot(
+            time_steps, response_truth[time_steps, x, y], color="black", label="Truth"
+        )
+
+        if responses_ensemble_post is not None:
+            ax.plot(
+                time_steps,
+                responses_ensemble_post.query(f"x=={x} & y=={y}"),
+                color="orange",
+                alpha=0.2,
+            )
+            ax.plot([], [], "orange", label="Posterior responses")
+
+        ax.legend(loc="best")
+
+        fig.tight_layout()
+
+
+plot_responses(np.unique(k_levels), d, Y_df, u_t)
 
 # %% [markdown]
 # ## Deactivate sensors that measure the same temperature in all realizations
@@ -411,7 +482,7 @@ Cdd = Cdd[:, ~is_outlier]
 Y_prime = Y - Y.mean(axis=1, keepdims=True)
 C_YY = Y_prime @ Y_prime.T / (N - 1)
 Sigma_Y = np.diag(np.sqrt(np.diag(C_YY)))
-corr_trunc = 0.5
+corr_trunc = 3 / np.sqrt(N)
 
 A_ES_loc = []
 
@@ -438,6 +509,7 @@ for A_chunk in np.array_split(A, indices_or_sections=10):
     A_ES_loc.append(A_chunk @ X_loc)
 
 A_ES_loc = np.vstack(A_ES_loc)
+A_ES_loc = A_ES_loc.clip(min=1e-8)
 
 # %% [markdown]
 # ## Perform ES update
@@ -474,7 +546,7 @@ A_ES = A_ES.clip(min=1e-8)
 # ```
 
 # %% [markdown]
-# ## Comparing prior and posterior
+# ## Numerical comparison of prior and posterior using RMSE
 #
 # The posterior calculated by ES is on average expected to be closer to the truth than the prior.
 # By "closer", we mean in terms of Root Mean Squared Error (RMSE).
@@ -494,21 +566,43 @@ np.sqrt(np.mean(err_posterior_loc * err_posterior_loc))
 err_prior = alpha_t.ravel() - A.mean(axis=1)
 np.sqrt(np.mean(err_prior * err_prior))
 
+# %% [markdown]
+# ## IES
+
+# %%
+# Step length in Gauss Newton
+gamma = 1.0
+
+# Coefficient matrix as defined in Eq. 16 and Eq. 17.
+W = np.zeros(shape=(N, N))
+
+W = analysis.IES(Y, D, Cdd, W, gamma)
+X_IES = np.identity(N) + W
+A_IES = A @ X_IES
+A_IES = A_IES.clip(min=1e-8)
+
+# %%
+err_posterior_ies = alpha_t.ravel() - A_IES.mean(axis=1)
+np.sqrt(np.mean(err_posterior_ies * err_posterior_ies))
+
+# %% [markdown]
+# ## Graphical comparison of prior and posterior mean-fields
+
 # %%
 fig, ax = plt.subplots(nrows=1, ncols=4)
 fig.set_size_inches(10, 10)
 
 ax[0].set_title(f"Posterior dass")
 ax[0].invert_yaxis()
-ax[1].set_title(f"Posterior localization")
+ax[1].set_title(f"Posterior loc")
 ax[1].invert_yaxis()
 ax[2].set_title(f"Truth")
 ax[2].invert_yaxis()
 ax[3].set_title(f"Prior")
 ax[3].invert_yaxis()
 
-vmin = 8
-vmax = 20
+vmin = 0
+vmax = np.max(alpha_t) + 0.1 * np.max(alpha_t)
 p0 = ax[0].pcolormesh(A_ES.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
 p1 = ax[1].pcolormesh(A_ES_loc.mean(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
 p2 = ax[2].pcolormesh(alpha_t.T, vmin=vmin, vmax=vmax)
@@ -527,22 +621,69 @@ ax[3].set_aspect("equal", "box")
 fig.tight_layout()
 
 # %% [markdown]
-# # IES
+# ## Plot standard deviations of fields to see which grid cells were updated the most
 
 # %%
-# Step length in Gauss Newton
-gamma = 1.0
+fig, ax = plt.subplots(nrows=1, ncols=3)
+fig.set_size_inches(10, 10)
 
-# Coefficient matrix as defined in Eq. 16 and Eq. 17.
-W = np.zeros(shape=(N, N))
+ax[0].set_title(f"ES")
+ax[0].invert_yaxis()
+ax[1].set_title(f"ES loc")
+ax[1].invert_yaxis()
+ax[2].set_title(f"Prior")
+ax[2].invert_yaxis()
+
+vmin = A.std(axis=1).min() - 0.1 * A.std(axis=1).min()
+vmax = A.std(axis=1).max() + 0.1 * A.std(axis=1).max()
+p0 = ax[0].pcolormesh(A_ES.std(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+p1 = ax[1].pcolormesh(A_ES_loc.std(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+p2 = ax[2].pcolormesh(A.std(axis=1).reshape(nx, nx).T, vmin=vmin, vmax=vmax)
+
+utils.colorbar(p0)
+utils.colorbar(p1)
+utils.colorbar(p2)
+
+ax[0].set_aspect("equal", "box")
+ax[1].set_aspect("equal", "box")
+ax[2].set_aspect("equal", "box")
+
+fig.tight_layout()
+
+# %% [markdown]
+# ## Investigate quality of history match
+
+# %%
+alphas_post = []
+for realization in range(A_ES.shape[1]):
+    alphas_post.append(A_ES[:, realization].reshape(nx, nx))
+
+fwd_runs = p_map(
+    pde.heat_equation,
+    [u_init] * N,
+    alphas_post,
+    [dx] * N,
+    [dt] * N,
+    [k_start] * N,
+    [k_end] * N,
+    streams,
+    [scale] * N,
+    desc=f"Running forward model.",
+)
+
+Y_df_post = pd.DataFrame({"k": k_levels, "x": x_levels, "y": y_levels})
+
+for real, fwd_run in enumerate(fwd_runs):
+    Y_df_post = Y_df_post.assign(**{f"R{real}": fwd_run[k_levels, x_levels, y_levels]})
+
+Y_df_post = Y_df_post.set_index(["k", "x", "y"], verify_integrity=True)
+
+plot_responses(np.unique(k_levels), d, Y_df, u_t, Y_df_post)
 
 # %% [markdown]
 # ## Check that single iteration of IES with step length 1.0 is the same as ES.
 
 # %%
-W = analysis.IES(Y, D, Cdd, W, gamma)
-X_IES = np.identity(N) + W
-
 assert np.isclose(X_IES, X, atol=1e-5).all()
 
 # %%
