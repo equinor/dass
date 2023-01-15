@@ -7,11 +7,11 @@ It includes implementations of Ensemble Smoother (ES) as given in [1] and Iterat
 see [dass/analysis.py](dass/analysis.py).
 The implementation of ES can easily be extended to the Ensemble Smoother with Multiple Data Assimilation (ES-MDA) as described in [3].
 
-Examples / Tutorials:
+For notebooks with examples and tutorials see the `notebooks/` folder.
 
-- [notebooks/ES_2D_Heat_Equation.ipynb](notebooks/ES_2D_Heat_Equation.ipynb) for parameter estimation using ES and the Heat Equation.
-- [notebooks/EnKF_2D_Heat_Equation.ipynb](notebooks/EnKF_2D_Heat_Equation.ipynb) for sequential data assimilation or filtering using EnKF and the Heat Equation.
-- [notebooks/IES_Burgers.ipynb](notebooks/IES_Burgers.ipynb) for parameter estimation using IES and Burgers' equation.
+**NB!** notice that there are no `.ipynb` files in the `notebooks/` folder.
+This is because we use [Jupytext](https://github.com/mwouts/jupytext) to sync `.py` and `.ipynb` files,
+which means that we only need to keep the `.py` files in source control.
 
 ## Installation
 
@@ -27,7 +27,7 @@ pip install -e .
 pip install -r dev-requirements.txt
 # Start jupyter notebook
 jupyter notebook
-# To make sure everything works, run Smoothers.ipynb in the notebooks folder
+# To make sure everything works, run on the of the notebooks in the notebooks/ folder.
 ```
 
 ## On notation

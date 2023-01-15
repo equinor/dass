@@ -81,7 +81,11 @@ def IES(
 
     H = S @ W + D - Y
 
-    # Eq. 50
+    # Eq. 42 - Inversion in measurement space
+    # W = W - gamma * (W - S.T @ np.linalg.inv(S @ S.T + (N - 1) * Cdd) @ H)
+
+    # Eq. 50 - Exact inversion without assuming a diagonal error covariance
+    # notice that the inversion is computed in the ensemble subspace.
     W = W - gamma * (
         W
         - np.linalg.inv(S.T @ np.linalg.inv(Cdd) @ S + (N - 1) * np.identity(N))
