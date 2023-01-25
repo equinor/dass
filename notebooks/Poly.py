@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -42,7 +42,7 @@ import iterative_ensemble_smoother as ies
 from dass import pde, utils, analysis, taper
 
 # %%
-N = 100
+N = 200
 
 
 # %%
@@ -66,9 +66,8 @@ def p(x):
 
 x_observations = [0, 2, 4, 6, 8]
 observations = [
-    (p(x) + rng.normal(loc=0, scale=0.1 * p(x)), 0.1 * p(x), x) for x in x_observations
+    (p(x) + rng.normal(loc=0, scale=0.2 * p(x)), 0.2 * p(x), x) for x in x_observations
 ]
-# observations = [(p(x) + rng.normal(loc=0, scale=0.1), 0.1, x) for x in x_observations]
 
 d = pd.DataFrame(observations, columns=["value", "sd", "x"])
 
@@ -85,7 +84,6 @@ ax.grid()
 
 # %%
 # Assume diagonal ensemble covariance matrix for the measurement perturbations.
-# Is this a big assumption?
 Cdd = np.diag(d.sd.values**2)
 
 # 9.4 Ensemble representation for measurements
@@ -93,16 +91,12 @@ E = rng.multivariate_normal(mean=np.zeros(len(Cdd)), cov=Cdd, size=N).T
 E = E - E.mean(axis=1, keepdims=True)
 assert E.shape == (m, N)
 
-# We will not use the sample covariance Cee, and instead use Cdd directly.
-# It is not clear to us why Cee is proposed used.
-# Cee = (E @ E.T) / (N - 1)
-
 D = np.ones((m, N)) * d.value.values.reshape(-1, 1) + E
 
 # %%
-coeff_a = rng.uniform(-1, 1, size=N)
-coeff_b = rng.uniform(-2, 2, size=N)
-coeff_c = rng.uniform(-5, 5, size=N)
+coeff_a = rng.normal(0, 1, size=N)
+coeff_b = rng.normal(0, 1, size=N)
+coeff_c = rng.normal(0, 1, size=N)
 
 # %%
 A = np.concatenate(
@@ -142,21 +136,24 @@ ax[0, 0].hist(A[0, :])
 
 ax[0, 1].set_title("a - posterior")
 ax[0, 1].hist(A_ES[0, :])
-ax[0, 1].axvline(a_t, color="k", linestyle="--")
+ax[0, 1].axvline(a_t, color="k", linestyle="--", label="truth")
+ax[0, 1].legend()
 
 ax[1, 0].set_title("b - prior")
 ax[1, 0].hist(A[1, :])
 
 ax[1, 1].set_title("b - posterior")
 ax[1, 1].hist(A_ES[1, :])
-ax[1, 1].axvline(b_t, color="k", linestyle="--")
+ax[1, 1].axvline(b_t, color="k", linestyle="--", label="truth")
+ax[1, 1].legend()
 
 ax[2, 0].set_title("c - prior")
 ax[2, 0].hist(A[2, :])
 
 ax[2, 1].set_title("c - posterior")
 ax[2, 1].hist(A_ES[2, :])
-ax[2, 1].axvline(c_t, color="k", linestyle="--")
+ax[2, 1].axvline(c_t, color="k", linestyle="--", label="truth")
+ax[2, 1].legend()
 
 fig.tight_layout()
 
