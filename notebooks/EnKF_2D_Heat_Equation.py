@@ -91,6 +91,7 @@ u_t = pde.heat_equation(u_init, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=
 # %% [markdown]
 # ## Interactive plot of true temperature field
 
+
 # %%
 def interactive_truth(k):
     fig, ax = plt.subplots()
@@ -277,6 +278,7 @@ fig.tight_layout()
 
 # %% [markdown]
 # ## Interactive plotting
+
 
 # %%
 def updated_vs_truth(k):
