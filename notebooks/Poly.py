@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 np.set_printoptions(suppress=True)
-rng = np.random.default_rng()
+rng = np.random.default_rng(12345)
 
 import matplotlib.pyplot as plt
 
@@ -51,22 +51,18 @@ def poly(a, b, c, x):
 
 
 # %%
-import numpy as np
-
-rng = np.random.default_rng(12345)
-
 a_t = 0.5
 b_t = 1.0
 c_t = 3.0
 
-
-def p(x):
-    return a_t * x**2 + b_t * x + c_t
-
-
 x_observations = [0, 2, 4, 6, 8]
 observations = [
-    (p(x) + rng.normal(loc=0, scale=0.2 * p(x)), 0.2 * p(x), x) for x in x_observations
+    (
+        poly(a_t, b_t, c_t, x) + rng.normal(loc=0, scale=0.2 * poly(a_t, b_t, c_t, x)),
+        0.2 * poly(a_t, b_t, c_t, x),
+        x,
+    )
+    for x in x_observations
 ]
 
 d = pd.DataFrame(observations, columns=["value", "sd", "x"])
@@ -78,6 +74,9 @@ m = d.shape[0]
 # %%
 fig, ax = plt.subplots()
 x_plot = np.linspace(0, 10, 50)
+ax.set_title("Truth and noisy observations")
+ax.set_xlabel("Time step")
+ax.set_ylabel("Response")
 ax.plot(x_plot, poly(a_t, b_t, c_t, x_plot))
 ax.plot(d.index.get_level_values("x"), d.value.values, "o")
 ax.grid()
@@ -86,7 +85,6 @@ ax.grid()
 # Assume diagonal ensemble covariance matrix for the measurement perturbations.
 Cdd = np.diag(d.sd.values**2)
 
-# 9.4 Ensemble representation for measurements
 E = rng.multivariate_normal(mean=np.zeros(len(Cdd)), cov=Cdd, size=N).T
 E = E - E.mean(axis=1, keepdims=True)
 assert E.shape == (m, N)
