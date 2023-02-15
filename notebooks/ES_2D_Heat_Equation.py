@@ -184,6 +184,7 @@ fig.tight_layout()
 #
 # Shows how the temperature of the true field changes with time.
 
+
 # %%
 def interactive_truth(k):
     fig, ax = plt.subplots()
@@ -271,6 +272,7 @@ streams = [np.random.default_rng(s) for s in child_seeds]
 # We will search for solutions in the space spanned by the prior parameter fields.
 # This space is sometimes called the Ensemble Subspace.
 
+
 # %%
 def interactive_prior_fields(n):
     fig, ax = plt.subplots()
@@ -308,6 +310,7 @@ fwd_runs = p_map(
 # ## Interactive plot of single realisations
 #
 # Note that every realization has the same initial temperature field at time-step `k=0`, but that the plate cools down differently because it has different material properties.
+
 
 # %%
 def interactive_realisations(k, n):
@@ -371,6 +374,7 @@ assert Y.shape == (
 # ## Checking coverage
 #
 # There's good coverage if there is overlap between observations and responses at sensor points.
+
 
 # %%
 def plot_responses(

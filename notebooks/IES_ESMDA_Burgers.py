@@ -205,7 +205,6 @@ A_ES = A_ES @ X
 
 # %%
 for i in range(number_of_ies_iterations):
-
     # Step length in Gauss Newton
     gamma = get_steplength(i)
 
@@ -277,7 +276,6 @@ fig.tight_layout()
 
 # %%
 for i in range(number_of_ies_iterations):
-
     # Step length in Gauss Newton
     gamma = get_steplength(i)
 
