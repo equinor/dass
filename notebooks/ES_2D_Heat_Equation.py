@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.14.5
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -37,8 +37,6 @@ import ipywidgets as widgets
 
 from p_tqdm import p_map
 
-from scipy.ndimage import gaussian_filter
-
 import iterative_ensemble_smoother as ies
 
 # %%
@@ -59,6 +57,7 @@ nx = 10
 k_start = 0
 k_end = 500
 
+
 # %% [markdown]
 # ## Define prior
 #
@@ -66,12 +65,9 @@ k_end = 500
 # A good prior is therefore vital.
 #
 # Some fields are trickier to solve than others.
-# Here are two ways of defining a prior, one more complex or difficult to solve for than the other.
+
 
 # %%
-complex_prior = True
-
-
 def sample_prior_perm(N):
     mesh = np.meshgrid(np.linspace(0, 1, nx), np.linspace(0, 1, nx))
     lperms = np.exp(geostat.gaussian_fields(mesh, rng, N, r=0.8))
@@ -80,32 +76,11 @@ def sample_prior_perm(N):
 
 # Evensens' formulation of the Ensemble Smoother has the prior as
 # a (nx * nx, N) matrix, i.e (number of parameters, N).
-if complex_prior:
-    A = sample_prior_perm(N).T
+A = sample_prior_perm(N).T
 
-    alphas = []
-    for j in range(A.shape[1]):
-        alphas.append(A[:, j].reshape(nx, nx))
-
-else:
-    alphas = []
-    for i in range(N):
-        alpha = np.exp(
-            5
-            * gaussian_filter(
-                gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
-            )
-        )
-        alphas.append(alpha)
-
-    A = np.zeros(shape=(nx * nx, N))
-    for e in range(N):
-        A[:, e] = alphas[e].ravel()
-
-# %%
-# Putting multiple 2D matrices into a single matrix and from that calculate covariance matrices
-# leads to a somewhat strange looking matrix.
-plt.matshow(np.cov(A))
+alphas = []
+for j in range(A.shape[1]):
+    alphas.append(A[:, j].reshape(nx, nx))
 
 # %% [markdown]
 # ## Define true parameters, set true initial conditions and calculate the true temperature field
@@ -115,19 +90,8 @@ plt.matshow(np.cov(A))
 # %%
 dx = 1
 
-if complex_prior:
-    # Set the coefficient of heat transfer for each grid cell.
-    alpha_t = sample_prior_perm(1).T.reshape(nx, nx)
-else:
-    # Using trick from page 15 of "An Introduction to the Numerics of Flow in Porous Media using Matlab".
-    # It's a nice way to generate realistic-looking parameter fields.
-    # In real life we use third-party tools to generate good (whatever that means) prior parameter fields.
-    alpha_t = np.exp(
-        5
-        * gaussian_filter(
-            gaussian_filter(rng.random(size=(nx, nx)), sigma=2.0), sigma=1.0
-        )
-    )
+# Set the coefficient of heat transfer for each grid cell.
+alpha_t = sample_prior_perm(1).T.reshape(nx, nx)
 
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
