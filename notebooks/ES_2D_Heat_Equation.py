@@ -114,24 +114,6 @@ scale = None
 u_t = pde.heat_equation(u_init, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
 
 # %% [markdown]
-# # How-to create animation (Press `y` to convert from markdown to code)
-#
-# import matplotlib.animation as animation
-# from matplotlib.animation import FuncAnimation
-#
-# fig, ax = plt.subplots()
-# p = ax.pcolormesh(u[0], cmap=plt.cm.jet)
-# fig.colorbar(p)
-#
-# def animate(k):
-#     return p.set_array(u[k])
-#
-# anim = animation.FuncAnimation(
-#     fig, animate, interval=1, frames=k_end, repeat=False
-# )
-# anim.save("heat_equation_solution.gif", writer="imagemagick")
-
-# %% [markdown]
 # ## Plot every cells' heat transfer coefficient, i.e., the parameter field
 
 # %%
@@ -169,7 +151,6 @@ interact(
 # ## Define placement of sensors and generate synthetic observations based on the true temperature field
 
 # %%
-# Heat sources are kind of like injection wells
 # We can think about heat sources as injection wells.
 # Sensors would then typically be placed where we have production wells.
 # We'll place the sensors close to heat-sources because the plate cools of quite quickly.
@@ -214,7 +195,9 @@ p = ax.pcolormesh(u_t[0].T, cmap=plt.cm.jet)
 ax.invert_yaxis()
 ax.set_title("True temperature field with sensor placement")
 utils.colorbar(p)
-ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
+_ = ax.plot(
+    [i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5
+)
 
 # %% [markdown]
 # # Ensemble Smoother (ES)
