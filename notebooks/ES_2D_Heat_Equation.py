@@ -48,6 +48,7 @@ from dass import pde, utils, analysis, taper, geostat
 # ## Define ensemble size and parameters related to the simulator
 
 # %%
+# Defines how many simulations to run
 N = 50
 
 # Number of grid-cells in x and y direction
@@ -59,12 +60,12 @@ k_end = 500
 
 
 # %% [markdown]
-# ## Define prior
+# ## Define and visualize the `prior` parameter ensemble
 #
 # The Ensemble Smoother searches for solutions in `Ensemble Subspace`, which means that it tries to find a linear combination of the priors that best fit the observed data.
 # A good prior is therefore vital.
 #
-# Some fields are trickier to solve than others.
+# Since the prior depends on the random seed, some priors will lead to responses that are more difficult to work with than others.
 
 
 # %%
@@ -78,34 +79,54 @@ def sample_prior_perm(N):
 # a (nx * nx, N) matrix, i.e (number of parameters, N).
 A = sample_prior_perm(N).T
 
+# We'll also need a list of matrices to run simulations in parallel later on.
+# A list is also a bit easier to interactively visualize.
 alphas = []
-for j in range(A.shape[1]):
+for j in range(N):
     alphas.append(A[:, j].reshape(nx, nx))
+
+
+# %%
+def interactive_prior_fields(n):
+    fig, ax = plt.subplots()
+    ax.set_title(f"Prior parameter field {n}")
+    p = ax.pcolormesh(alphas[n].T)
+    utils.colorbar(p)
+    fig.tight_layout()
+
+
+interact(
+    interactive_prior_fields,
+    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
+)
 
 # %% [markdown]
 # ## Define true parameters, set true initial conditions and calculate the true temperature field
 #
-# Perhaps obvious, but we do not have this information in real-life.
+# In real problems, these true parameter values are not known.
+# They are in fact what we are trying to estimate.
+# However, in this synthetic example we know everything which makes it much easier to judge whether an algorithm works or not.
 
 # %%
-dx = 1
-
 # Set the coefficient of heat transfer for each grid cell.
-alpha_t = sample_prior_perm(1).T.reshape(nx, nx)
+# alpha_t = sample_prior_perm(1).T.reshape(nx, nx)
+# Let's use as true parameter field one relization from the prior
+# to make it easier for the Ensemble Smoother to find the solution.
+alpha_t = alphas[0]
+
+# Resultion on the `x` direction (nothing to worry about really)
+dx = 1
 
 # Calculate maximum `dt`.
 # If higher values are used, the numerical solution will become unstable.
+# Note that this could be avoided if we used an implicit solver.
 dt = dx**2 / (4 * max(np.max(A), np.max(alpha_t)))
 
-# True initial temperature field.
-u_init = np.empty((k_end, nx, nx))
-u_init.fill(0.0)
-
-# Heating the plate at two points initially.
+# Define initial condition, i.e., the initial temperature distribution.
 # How you define initial conditions will effect the spread of results,
 # i.e., how similar different realisations are.
-u_init[:, 5, 5] = 100
-# u_init[:, 6, 6] = 100
+u_init = np.zeros((k_end, nx, nx))
+u_init[:, 5:7, 5:7] = 100
 
 # How much noise to add to heat equation, also called model noise.
 # scale = 0.1
@@ -115,11 +136,12 @@ u_t = pde.heat_equation(u_init, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=
 
 # %% [markdown]
 # ## Plot every cells' heat transfer coefficient, i.e., the parameter field
+#
+# Again, this is what we are trying estimate.
 
 # %%
 fig, ax = plt.subplots()
 ax.set_title("True parameter field")
-ax.invert_yaxis()
 p = ax.pcolormesh(alpha_t.T)
 utils.colorbar(p)
 fig.tight_layout()
@@ -136,7 +158,6 @@ def interactive_truth(k):
     fig, ax = plt.subplots()
     fig.suptitle("True temperature field")
     p = ax.pcolormesh(u_t[k].T, cmap=plt.cm.jet, vmin=0, vmax=100)
-    ax.invert_yaxis()
     ax.set_title(f"k = {k}")
     utils.colorbar(p)
     fig.tight_layout()
@@ -151,8 +172,6 @@ interact(
 # ## Define placement of sensors and generate synthetic observations based on the true temperature field
 
 # %%
-# We can think about heat sources as injection wells.
-# Sensors would then typically be placed where we have production wells.
 # We'll place the sensors close to heat-sources because the plate cools of quite quickly.
 obs_coordinates = [
     utils.Coordinate(5, 3),
@@ -178,32 +197,37 @@ obs_coordinates = [
 obs_times = np.linspace(5, k_end, 8, endpoint=False, dtype=int)
 
 d = utils.observations(obs_coordinates, obs_times, u_t, lambda value: abs(0.05 * value))
-# number of measurements
 m = d.shape[0]
 print("Number of observations: ", m)
 
+# %% [markdown]
+# # Plot temperature field at a specific time and show placement of sensors
+
+# %%
 k_levels = d.index.get_level_values("k").to_list()
 x_levels = d.index.get_level_values("x").to_list()
 y_levels = d.index.get_level_values("y").to_list()
 
-# Plot temperature field and show placement of sensors.
 obs_coordinates_from_index = set(zip(x_levels, y_levels))
 x, y = zip(*obs_coordinates_from_index)
 
 fig, ax = plt.subplots()
-p = ax.pcolormesh(u_t[0].T, cmap=plt.cm.jet)
-ax.invert_yaxis()
-ax.set_title("True temperature field with sensor placement")
+time_to_plot_at = 20
+p = ax.pcolormesh(u_t[time_to_plot_at].T, cmap=plt.cm.jet, vmin=0, vmax=100)
+ax.set_title(f"True temperature field at t = {time_to_plot_at} with sensor placement")
 utils.colorbar(p)
-_ = ax.plot(
-    [i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5
-)
+ax.plot([i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5)
+fig.tight_layout()
 
 # %% [markdown]
-# # Ensemble Smoother (ES)
+# # Running `N` simulations in parallel
+#
+# The term `forward model` is often used to mean a simulator (like our 2D heat-equation solver) in addition to pre-, and post-processing steps.
 
 # %% [markdown]
-# ## Define random seeds because multiprocessing
+# ## Define random seeds in a way suitable for multiprocessing
+#
+# You can read up on why this is necessary here:
 #
 # https://numpy.org/doc/stable/reference/random/parallel.html#seedsequence-spawning
 
@@ -212,31 +236,6 @@ ss = np.random.SeedSequence(12345)
 child_seeds = ss.spawn(N)
 streams = [np.random.default_rng(s) for s in child_seeds]
 
-
-# %% [markdown]
-# ## Interactive plot of prior parameter fields
-#
-# We will search for solutions in the space spanned by the prior parameter fields.
-# This space is sometimes called the Ensemble Subspace.
-
-
-# %%
-def interactive_prior_fields(n):
-    fig, ax = plt.subplots()
-    ax.set_title(f"Prior field {n}")
-    ax.invert_yaxis()
-    p = ax.pcolormesh(alphas[n].T)
-    utils.colorbar(p)
-    fig.tight_layout()
-
-
-interact(
-    interactive_prior_fields,
-    n=widgets.IntSlider(min=0, max=N - 1, step=1, value=0),
-)
-
-# %% [markdown]
-# ## Run forward model (heat equation) `N` times
 
 # %%
 fwd_runs = p_map(
@@ -256,16 +255,18 @@ fwd_runs = p_map(
 # %% [markdown]
 # ## Interactive plot of single realisations
 #
-# Note that every realization has the same initial temperature field at time-step `k=0`, but that the plate cools down differently because it has different material properties.
+# Note that every realization has the same initial temperature field at time-step `k=0`, but that each realization cools down a bit differently because the plate in each realization has somewhat different material properties.
 
 
 # %%
 def interactive_realisations(k, n):
     fig, ax = plt.subplots()
-    ax.invert_yaxis()
     fig.suptitle(f"Temperature field for realisation {n}")
     p = ax.pcolormesh(fwd_runs[n][k].T, cmap=plt.cm.jet, vmin=0, vmax=100)
     ax.set_title(f"k = {k}")
+    ax.plot(
+        [i + 0.5 for i in x], [j + 0.5 for j in y], "s", color="white", markersize=5
+    )
     utils.colorbar(p)
     fig.tight_layout()
 
@@ -277,28 +278,13 @@ interact(
 )
 
 # %% [markdown]
-# ## Ensemble representation for measurements (Section 9.4 of [1])
-#
-# Note that Evensen calls measurements what ERT calls observations.
-
-# %%
-# Assume diagonal ensemble covariance matrix for the measurement perturbations.
-# Is this a big assumption?
-Cdd = np.diag(d.sd.values**2)
-
-# 9.4 Ensemble representation for measurements
-E = rng.multivariate_normal(mean=np.zeros(len(Cdd)), cov=Cdd, size=N).T
-E = E - E.mean(axis=1, keepdims=True)
-assert E.shape == (m, N)
-
-# We will not use the sample covariance Cee, and instead use Cdd directly.
-# It is not clear to us why Cee is proposed used.
-# Cee = (E @ E.T) / (N - 1)
-
-D = np.ones((m, N)) * d.value.values.reshape(-1, 1) + E
+# # Ensemble Smoother (ES)
 
 # %% [markdown]
 # ## Measure model response at points in time and space where we have observations
+#
+# The `Ensemble Smoother` uses the difference between what the simulator claims happened at `(k, x, y)` and what uncertain sensors claim happened at the same point in time and space.
+# Hence, we only need the responses where we have actual observations.
 
 # %%
 Y_df = pd.DataFrame({"k": k_levels, "x": x_levels, "y": y_levels})
@@ -308,7 +294,6 @@ for real, fwd_run in enumerate(fwd_runs):
 
 Y_df = Y_df.set_index(["k", "x", "y"], verify_integrity=True)
 
-# %%
 Y = Y_df.values
 
 assert Y.shape == (
@@ -318,9 +303,10 @@ assert Y.shape == (
 
 
 # %% [markdown]
-# ## Checking coverage
+# ## Checking `Coverage`
 #
-# There's good coverage if there is overlap between observations and responses at sensor points.
+# Ideally, we want our model to be so good that its responses do not deviate much from what our sensors are telling us.
+# When this is the case, we say that we have achieved good `coverage`.
 
 
 # %%
@@ -386,6 +372,27 @@ def plot_responses(
 
 
 plot_responses(np.unique(k_levels), d, Y_df, u_t)
+
+# %% [markdown]
+# ## Ensemble representation for measurements (Section 9.4 of [1])
+#
+# Note that Evensen calls measurements what ERT calls observations.
+
+# %%
+# Assume diagonal ensemble covariance matrix for the measurement perturbations.
+# Is this a big assumption?
+Cdd = np.diag(d.sd.values**2)
+
+# 9.4 Ensemble representation for measurements
+E = rng.multivariate_normal(mean=np.zeros(len(Cdd)), cov=Cdd, size=N).T
+E = E - E.mean(axis=1, keepdims=True)
+assert E.shape == (m, N)
+
+# We will not use the sample covariance Cee, and instead use Cdd directly.
+# It is not clear to us why Cee is proposed used.
+# Cee = (E @ E.T) / (N - 1)
+
+D = np.ones((m, N)) * d.value.values.reshape(-1, 1) + E
 
 # %% [markdown]
 # ## Deactivate sensors that measure the same temperature in all realizations
@@ -544,13 +551,9 @@ fig, ax = plt.subplots(nrows=1, ncols=4)
 fig.set_size_inches(10, 10)
 
 ax[0].set_title(f"Posterior dass")
-ax[0].invert_yaxis()
 ax[1].set_title(f"Posterior loc")
-ax[1].invert_yaxis()
 ax[2].set_title(f"Truth")
-ax[2].invert_yaxis()
 ax[3].set_title(f"Prior")
-ax[3].invert_yaxis()
 
 vmin = 0
 vmax = np.max(alpha_t) + 0.1 * np.max(alpha_t)
@@ -579,11 +582,8 @@ fig, ax = plt.subplots(nrows=1, ncols=3)
 fig.set_size_inches(10, 10)
 
 ax[0].set_title(f"ES")
-ax[0].invert_yaxis()
 ax[1].set_title(f"ES loc")
-ax[1].invert_yaxis()
 ax[2].set_title(f"Prior")
-ax[2].invert_yaxis()
 
 vmin = A.std(axis=1).min() - 0.1 * A.std(axis=1).min()
 vmax = A.std(axis=1).max() + 0.1 * A.std(axis=1).max()

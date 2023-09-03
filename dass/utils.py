@@ -40,9 +40,6 @@ def observations(
     # Create dataframe with observations and necessary meta data.
     for coordinate in coordinates:
         for k in times:
-            # The reason for u[k, y, x] instead of the perhaps more natural u[k, x, y],
-            # is due to a convention followed by matplotlib's `pcolormesh`
-            # See documentation for details.
             value = field[k, coordinate.x, coordinate.y]
             sd = error(value)
             _df = pd.DataFrame(

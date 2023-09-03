@@ -21,7 +21,6 @@ def heat_equation(
     https://levelup.gitconnected.com/solving-2d-heat-equation-numerically-using-python-3334004aa01a
     """
     _u = u.copy()
-    # assert (dt <= dx**2 / (4 * alpha)).all(), "Choise of dt not numerically stable"
     nx = u.shape[1]  # number of grid cells
     assert alpha.shape == (nx, nx)
 
