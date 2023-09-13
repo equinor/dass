@@ -67,15 +67,14 @@ k_end = 500
 
 
 # %%
-def sample_prior_perm(N):
+def sample_prior_conductivity(N):
     mesh = np.meshgrid(np.linspace(0, 1, nx), np.linspace(0, 1, nx))
-    lperms = np.exp(geostat.gaussian_fields(mesh, rng, N, r=0.8))
-    return lperms
+    return np.exp(geostat.gaussian_fields(mesh, rng, N, r=0.8))
 
 
 # Evensens' formulation of the Ensemble Smoother has the prior as
 # a (nx * nx, N) matrix, i.e (number of parameters, N).
-A = sample_prior_perm(N).T
+A = sample_prior_conductivity(N).T
 
 # We'll also need a list of matrices to run simulations in parallel later on.
 # A list is also a bit easier to interactively visualize.
@@ -107,7 +106,7 @@ interact(
 
 # %%
 # Set the coefficient of heat transfer for each grid cell.
-# alpha_t = sample_prior_perm(1).T.reshape(nx, nx)
+# alpha_t = sample_prior_conductivity(1).T.reshape(nx, nx)
 # Let's use as true parameter field one relization from the prior
 # to make it easier for the Ensemble Smoother to find the solution.
 alpha_t = alphas[0]
