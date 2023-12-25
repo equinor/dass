@@ -2,7 +2,7 @@ import numpy as np
 
 rng = np.random.default_rng()
 
-from dass.analysis import ES, IES
+from dass.analysis import ES
 
 """
 Bayes' theorem states that
@@ -56,30 +56,3 @@ def test_ES_with_localisation():
     A_ES = A @ X
 
     assert np.isclose(A_ES_local, A_ES).all()
-
-
-def test_IES():
-    # Check that single iteration of IES with step length 1.0 is the same as ES.
-    gamma = 1.0
-    W = np.zeros(shape=(N, N))
-    W = IES(Y, D, Cdd, W, gamma)
-    X_IES = np.identity(N) + W
-    A_IES = A @ X_IES
-
-    # Potentially flaky, but still useful.
-    assert np.isclose(A_IES[0, :].mean(), observation / 2, rtol=0.1)
-    assert np.isclose(A_IES[1, :].mean(), observation / 2, rtol=0.1)
-    assert (np.abs(np.cov(A_IES) - np.identity(nparam)) < 0.15).all()
-
-
-def test_ES_vs_IES():
-    X = ES(Y, D, Cdd)
-    A_ES = A @ X
-
-    gamma = 1.0
-    W = np.zeros(shape=(N, N))
-    W = IES(Y, D, Cdd, W, gamma)
-    X_IES = np.identity(N) + W
-    A_IES = A @ X_IES
-
-    assert np.isclose(A_ES, A_IES).all()

@@ -507,25 +507,6 @@ err_prior = alpha_t.ravel() - A.mean(axis=1)
 np.sqrt(np.mean(err_prior * err_prior))
 
 # %% [markdown]
-# ## IES
-
-# %%
-# Step length in Gauss Newton
-gamma = 1.0
-
-# Coefficient matrix as defined in Eq. 16 and Eq. 17.
-W = np.zeros(shape=(N, N))
-
-W = analysis.IES(Y, D, Cdd, W, gamma)
-X_IES = np.identity(N) + W
-A_IES = A @ X_IES
-A_IES = A_IES.clip(min=1e-8)
-
-# %%
-err_posterior_ies = alpha_t.ravel() - A_IES.mean(axis=1)
-np.sqrt(np.mean(err_posterior_ies * err_posterior_ies))
-
-# %% [markdown]
 # ## Graphical comparison of prior and posterior mean-fields
 
 # %%
@@ -612,11 +593,5 @@ for real, fwd_run in enumerate(fwd_runs):
 Y_df_post = Y_df_post.set_index(["k", "x", "y"], verify_integrity=True)
 
 plot_responses(np.unique(k_levels), d, Y_df, u_t, Y_df_post)
-
-# %% [markdown]
-# ## Check that single iteration of IES with step length 1.0 is the same as ES.
-
-# %%
-assert np.isclose(X_IES, X, atol=1e-5).all()
 
 # %%
