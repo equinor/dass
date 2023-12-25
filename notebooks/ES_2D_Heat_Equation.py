@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.5
+#       jupytext_version: 1.16.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -36,8 +36,6 @@ from ipywidgets import interact
 import ipywidgets as widgets
 
 from p_tqdm import p_map
-
-import iterative_ensemble_smoother as ies
 
 # %%
 # %load_ext autoreload
@@ -486,22 +484,6 @@ if corr_trunc == 0.0:
 # The update may give non-physical parameter values, which here means negative heat conductivity.
 # Setting negative values to a small positive value but not zero because we want to be able to divide by them.
 A_ES = A_ES.clip(min=1e-8)
-
-# %% [markdown]
-# ## Testing the new iterative_ensemble_smoother package
-#
-# As part of ERT development, we wrote an efficient implementation of the iterative ensemble smoother.
-# This package is available via pypi and you can easily test it out here if you wish.
-#
-# ```python
-# A_ES_ert = ies.ensemble_smoother_update_step(
-#     Y,
-#     A,
-#     obs_std[~is_outlier],
-#     obs_value[~is_outlier],
-#     inversion=ies.InversionType.EXACT,
-# )
-# ```
 
 # %% [markdown]
 # ## Numerical comparison of prior and posterior using RMSE

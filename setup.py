@@ -13,6 +13,5 @@ setup(
         "jupytext",
         "pandas>=1.4.2,<2.0.0",
         "scipy>=1.9.0,<2.0.0",
-        "iterative_ensemble_smoother>=0.0.5,<1.0.0",
     ],
 )
