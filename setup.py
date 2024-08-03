@@ -11,6 +11,7 @@ setup(
         "matplotlib>=3.5.1,<4.0.0",
         "jupyter",
         "jupytext",
+        "numpy<2.0.0",
         "pandas>=1.4.2,<2.0.0",
         "scipy>=1.9.0,<2.0.0",
     ],
