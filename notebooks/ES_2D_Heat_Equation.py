@@ -111,7 +111,7 @@ interact(
 # to make it easier for the Ensemble Smoother to find the solution.
 alpha_t = alphas[0]
 
-# Resultion on the `x` direction (nothing to worry about really)
+# Resolution in the x-direction (nothing to worry about really)
 dx = 1
 
 # Calculate maximum `dt`.
