@@ -1,4 +1,5 @@
 """Partial Differential Equations to use as forward models."""
+
 from typing import Optional
 
 import numpy as np
