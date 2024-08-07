@@ -14,7 +14,17 @@
 # ---
 
 # %% [markdown]
-# # Parameter estimation using ES and the 2D Heat Equation
+# # Estimating Spatially Varying Heat Transfer Coefficients Using Ensemble Smoothers
+#
+# Imagine you're an archaeologist who has discovered a large, ancient metal plate buried in your garden.\
+# You're intrigued by its thermal properties, particularly how well it transfers heat, as this could provide clues about its composition and origin.\
+# Using a metal detector you've established the size and have concluded that it is too large to excavate without risking damage.\
+# Instead, you drill a few small holes at specific locations and measure the heat transfer coefficient at these points.\
+# The sparse measurements show that the plates' heat transfer coefficient varies in space, but you need to know it everywhere.\
+# To gather more information, you decide to introduce a heat source by drilling a hole and lowering a heat element to warm up the plate at that point.\
+# After removing the heat source, the plate will cool down according to the heat equation from physics.\
+# Using the sparse measurements and the observed cooling behavior, your goal is to estimate the heat transfer coefficient everywhere on the plate.
+#
 
 # %%
 import numpy as np
