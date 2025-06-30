@@ -21,29 +21,27 @@ def heat_equation(
     https://levelup.gitconnected.com/solving-2d-heat-equation-numerically-using-python-3334004aa01a
     """
     ny, nx = u0.shape
-    assert alpha.shape == (ny, nx)
-
-    # Pre-allocate solution array
     u = np.zeros((num_steps + 1, ny, nx))
-    u[0] = u0  # Set initial condition
-
+    u[0] = u0
     gamma = (alpha * dt) / (dx**2)
 
     for k in range(num_steps):
-        for i in range(1, ny - 1):
-            for j in range(1, nx - 1):
-                noise = rng.normal(scale=scale) if scale is not None else 0
-                u[k + 1, i, j] = (
-                    gamma[i, j]
-                    * (
-                        u[k, i + 1, j]
-                        + u[k, i - 1, j]
-                        + u[k, i, j + 1]
-                        + u[k, i, j - 1]
-                        - 4 * u[k, i, j]
-                    )
-                    + u[k, i, j]
-                    + noise
-                )
+        # Vectorized finite difference
+        u[k + 1, 1:-1, 1:-1] = (
+            gamma[1:-1, 1:-1]
+            * (
+                u[k, 2:, 1:-1]  # i+1
+                + u[k, :-2, 1:-1]  # i-1
+                + u[k, 1:-1, 2:]  # j+1
+                + u[k, 1:-1, :-2]  # j-1
+                - 4 * u[k, 1:-1, 1:-1]
+            )
+            + u[k, 1:-1, 1:-1]
+        )
+
+        # Add noise if needed
+        if scale is not None:
+            noise = rng.normal(0, scale, size=(ny - 2, nx - 2))
+            u[k + 1, 1:-1, 1:-1] += noise
 
     return u
