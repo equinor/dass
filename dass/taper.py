@@ -1,5 +1,4 @@
-"""Tapering function for use in localisation.
-"""
+"""Tapering function for use in localisation."""
 
 import numpy as np
 

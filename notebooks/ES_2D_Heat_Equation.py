@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -132,14 +132,15 @@ dt = dx**2 / (4 * max(np.max(A), np.max(alpha_t)))
 # Define initial condition, i.e., the initial temperature distribution.
 # How you define initial conditions will effect the spread of results,
 # i.e., how similar different realisations are.
-u_init = np.zeros((k_end, nx, nx))
-u_init[:, 5:7, 5:7] = 100
+u0 = np.zeros((nx, nx))
+u0[5:7, 5:7] = 100
 
 # How much noise to add to heat equation, also called model noise.
 # scale = 0.1
 scale = None
+num_steps = k_end - k_start
 
-u_t = pde.heat_equation(u_init, alpha_t, dx, dt, k_start, k_end, rng=rng, scale=scale)
+u_t = pde.heat_equation(u0, alpha_t, dx, dt, num_steps, rng=rng, scale=scale)
 
 # %% [markdown]
 # ## Plot every cells' heat transfer coefficient, i.e., the parameter field
@@ -247,12 +248,11 @@ streams = [np.random.default_rng(s) for s in child_seeds]
 # %%
 fwd_runs = p_map(
     pde.heat_equation,
-    [u_init] * N,
+    [u0] * N,
     alphas,
     [dx] * N,
     [dt] * N,
-    [k_start] * N,
-    [k_end] * N,
+    [num_steps] * N,
     streams,
     [scale] * N,
     desc=f"Running forward model.",
@@ -581,26 +581,27 @@ alphas_post = []
 for realization in range(A_ES.shape[1]):
     alphas_post.append(A_ES[:, realization].reshape(nx, nx))
 
+# Define initial condition and number of steps
+u0 = np.zeros((nx, nx))
+u0[5:7, 5:7] = 100
+num_steps = k_end - k_start
+
 fwd_runs = p_map(
     pde.heat_equation,
-    [u_init] * N,
+    [u0] * N,
     alphas_post,
     [dx] * N,
     [dt] * N,
-    [k_start] * N,
-    [k_end] * N,
+    [num_steps] * N,
     streams,
     [scale] * N,
     desc=f"Running forward model.",
 )
 
 Y_df_post = pd.DataFrame({"k": k_levels, "x": x_levels, "y": y_levels})
-
 for real, fwd_run in enumerate(fwd_runs):
     Y_df_post = Y_df_post.assign(**{f"R{real}": fwd_run[k_levels, x_levels, y_levels]})
-
 Y_df_post = Y_df_post.set_index(["k", "x", "y"], verify_integrity=True)
-
 plot_responses(np.unique(k_levels), d, Y_df, u_t, Y_df_post)
 
 # %%

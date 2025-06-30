@@ -7,12 +7,11 @@ import numpy.typing as npt
 
 
 def heat_equation(
-    u: npt.NDArray[np.float_],
+    u0: npt.NDArray[np.float_],
     alpha: npt.NDArray[np.float_],
-    dx: int,
+    dx: float,
     dt: float,
-    k_start: int,
-    k_end: int,
+    num_steps: int,
     rng: np.random.Generator,
     scale: Optional[float] = None,
 ) -> npt.NDArray[np.float_]:
@@ -21,30 +20,30 @@ def heat_equation(
     Based on:
     https://levelup.gitconnected.com/solving-2d-heat-equation-numerically-using-python-3334004aa01a
     """
-    _u = u.copy()
-    nx = u.shape[1]  # number of grid cells
-    assert alpha.shape == (nx, nx)
+    ny, nx = u0.shape
+    assert alpha.shape == (ny, nx)
+
+    # Pre-allocate solution array
+    u = np.zeros((num_steps + 1, ny, nx))
+    u[0] = u0  # Set initial condition
 
     gamma = (alpha * dt) / (dx**2)
-    plate_length = u.shape[1]
-    for k in range(k_start, k_end - 1, 1):
-        for i in range(1, plate_length - 1, dx):
-            for j in range(1, plate_length - 1, dx):
-                if scale is not None:
-                    noise = rng.normal(scale=scale)
-                else:
-                    noise = 0
-                _u[k + 1, i, j] = (
+
+    for k in range(num_steps):
+        for i in range(1, ny - 1):
+            for j in range(1, nx - 1):
+                noise = rng.normal(scale=scale) if scale is not None else 0
+                u[k + 1, i, j] = (
                     gamma[i, j]
                     * (
-                        _u[k][i + 1][j]
-                        + _u[k][i - 1][j]
-                        + _u[k][i][j + 1]
-                        + _u[k][i][j - 1]
-                        - 4 * _u[k][i][j]
+                        u[k, i + 1, j]
+                        + u[k, i - 1, j]
+                        + u[k, i, j + 1]
+                        + u[k, i, j - 1]
+                        - 4 * u[k, i, j]
                     )
-                    + _u[k][i][j]
+                    + u[k, i, j]
                     + noise
                 )
 
-    return _u
+    return u
