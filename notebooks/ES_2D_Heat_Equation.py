@@ -19,12 +19,19 @@
 # Imagine you're an archaeologist who has discovered a large, ancient metal plate buried in your garden.\
 # You're intrigued by its thermal properties, particularly how well it transfers heat, as this could provide clues about its composition and origin.\
 # Using a metal detector you've established the size and have concluded that it is too large to excavate without risking damage.\
-# Instead, you drill a few small holes at specific locations and measure the heat transfer coefficient at these points.\
-# The sparse measurements show that the plates' heat transfer coefficient varies in space, but you need to know it everywhere.\
+# Instead, you drill a few small holes at specific locations and measure the thermal conductivity ($k$) at these points.\
+# The sparse measurements show that the plates' thermal conductivity varies in space, but you need to know it everywhere.\
 # To gather more information, you decide to introduce a heat source by drilling a hole and lowering a heat element to warm up the plate at that point.\
 # After removing the heat source, the plate will cool down according to the heat equation from physics.\
-# Using the sparse measurements and the observed cooling behavior, your goal is to estimate the heat transfer coefficient everywhere on the plate.
+# Using the sparse measurements and the observed cooling behavior, your goal is to estimate the thermal conductivity everywhere on the plate.
 #
+# We simplify by assuming the density and specific heat capacity ($\rho c$) are constant throughout the plate, allowing us to focus on estimating the spatially-varying thermal conductivity $k(x,y)$. This reduces the full heat equation:
+#
+# $$\rho c \frac{\partial T}{\partial t} = \nabla \cdot (k \nabla T)$$
+#
+# to the simplified form:
+#
+# $$\frac{\partial T}{\partial t} = \nabla \cdot (k \nabla T)$$
 
 # %%
 import numpy as np
