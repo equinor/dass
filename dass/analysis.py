@@ -3,20 +3,20 @@ import numpy.typing as npt
 
 
 def ES(
-    Y: npt.NDArray[np.float_],
-    D: npt.NDArray[np.float_],
-    Cdd: npt.NDArray[np.float_],
+    Y: npt.NDArray[np.float64],
+    D: npt.NDArray[np.float64],
+    Cdd: npt.NDArray[np.float64],
     taper_coeff: float = 1.0,
-) -> npt.NDArray[np.float_]:
+) -> npt.NDArray[np.float64]:
     """Ensemble Smoother based on `evensen2009` section 9.5.
 
     Parameters
     ----------
-    Y : npt.NDArray[np.float_]
+    Y : npt.NDArray[np.float64]
         Measured responses
-    D : npt.NDArray[np.float_]
+    D : npt.NDArray[np.float64]
         Perturbed observations
-    Cdd : npt.NDArray[np.float_]
+    Cdd : npt.NDArray[np.float64]
         Diagonal observation error covariance
     taper_coeff: float
         Coefficient from tapering function used in localisation.
@@ -24,7 +24,7 @@ def ES(
 
     Returns
     -------
-    npt.NDArray[np.float_]
+    npt.NDArray[np.float64]
         Array to multiply with prior to get posterior.
     """
     N = D.shape[1]

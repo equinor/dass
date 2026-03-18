@@ -1,3 +1,6 @@
 pytest
 black
 jupytext
+nbconvert
+ipykernel
+nbmake
