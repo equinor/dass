@@ -1,5 +1,0 @@
-pytest
-black
-nbconvert
-ipykernel
-nbmake
