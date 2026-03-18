@@ -16,7 +16,7 @@ Coordinate = namedtuple("Coordinate", ["x", "y"])
 def observations(
     coordinates: List[Coordinate],
     times: npt.NDArray[np.int_],
-    field: npt.NDArray[np.float_],
+    field: npt.NDArray[np.float64],
     error: Callable,
 ) -> pd.DataFrame:
     """Generate synthetic observations by adding noise to true field-values.

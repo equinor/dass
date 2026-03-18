@@ -7,14 +7,14 @@ import numpy.typing as npt
 
 
 def heat_equation(
-    u0: npt.NDArray[np.float_],
-    alpha: npt.NDArray[np.float_],
+    u0: npt.NDArray[np.float64],
+    alpha: npt.NDArray[np.float64],
     dx: float,
     dt: float,
     num_steps: int,
     rng: np.random.Generator,
     scale: Optional[float] = None,
-) -> npt.NDArray[np.float_]:
+) -> npt.NDArray[np.float64]:
     """2D heat equation that supports field of heat coefficients.
 
     Based on:
