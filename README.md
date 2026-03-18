@@ -13,15 +13,10 @@ For notebooks with examples and tutorials see the `notebooks/` folder.
 ```bash
 git clone https://github.com/equinor/dass.git
 cd dass
-# dass supports Python 3.8 and above.
-python3.9 -m venv .venvdass
-source .venvdass/bin/activate
-# Add -e if you want to make changes.
-pip install -e .
-# Install additional requirements for developers.
-pip install -r dev-requirements.txt
+# Install dass and dependencies using uv.
+uv sync
 # Start jupyter notebook
-jupyter notebook
+uv run jupyter notebook
 # To make sure everything works, run on the of the notebooks in the notebooks/ folder.
 ```
 
