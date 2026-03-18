@@ -8,10 +8,6 @@ The implementation of ES can easily be extended to the Ensemble Smoother with Mu
 
 For notebooks with examples and tutorials see the `notebooks/` folder.
 
-**NB!** notice that there are no `.ipynb` files in the `notebooks/` folder.
-This is because we use [Jupytext](https://github.com/mwouts/jupytext) to sync `.py` and `.ipynb` files,
-which means that we only need to keep the `.py` files in source control.
-
 ## Installation
 
 ```bash
