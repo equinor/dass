@@ -3,8 +3,6 @@ from typing import Callable, List
 
 import numpy as np
 import numpy.typing as npt
-
-rng = np.random.default_rng()
 import pandas as pd
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -18,6 +16,7 @@ def observations(
     times: npt.NDArray[np.int_],
     field: npt.NDArray[np.float64],
     error: Callable,
+    rng: np.random.Generator,
 ) -> pd.DataFrame:
     """Generate synthetic observations by adding noise to true field-values.
 
@@ -26,6 +25,8 @@ def observations(
     error: Callable
         Function that takes a single argument (the true field value) and returns
         a value to be used as the standard deviation of the noise.
+    rng: np.random.Generator
+        Random number generator for reproducible observation noise.
     """
     d = pd.DataFrame(
         {
