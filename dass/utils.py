@@ -22,10 +22,20 @@ def observations(
 
     Parameters
     ----------
-    error: Callable
+    coordinates : List[Coordinate]
+        List of spatial coordinates at which observations are taken. Each
+        coordinate provides integer ``x`` and ``y`` indices into ``field``.
+    times : npt.NDArray[np.int_]
+        Array of time indices at which observations are taken. These index
+        the first dimension of ``field``.
+    field : npt.NDArray[np.float64]
+        True field values over time and space. Expected to be indexable as
+        ``field[k, x, y]`` for ``k`` in ``times`` and ``(x, y)`` in
+        ``coordinates``.
+    error : Callable
         Function that takes a single argument (the true field value) and returns
         a value to be used as the standard deviation of the noise.
-    rng: np.random.Generator
+    rng : np.random.Generator
         Random number generator for reproducible observation noise.
     """
     d = pd.DataFrame(
